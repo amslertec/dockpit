@@ -843,9 +843,9 @@ async fn handle_agent_stats(mut socket: axum::extract::ws::WebSocket, docker: Do
                 }).unwrap_or((0, 0));
                 let (blk_r, blk_w) = s.blkio_stats.io_service_bytes_recursive.as_ref().map(|entries| {
                     entries.iter().fold((0u64, 0u64), |(r, w), e| {
-                        match e.op.as_deref() {
-                            Some("read") | Some("Read") => (r + e.value, w),
-                            Some("write") | Some("Write") => (r, w + e.value),
+                        match e.op.as_str() {
+                            "read" | "Read" => (r + e.value, w),
+                            "write" | "Write" => (r, w + e.value),
                             _ => (r, w),
                         }
                     })
