@@ -28,10 +28,10 @@
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden" onclick={onclose}></div>
+	<div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99] md:hidden" onclick={onclose}></div>
 {/if}
 
-<aside class="fixed md:static inset-y-0 left-0 z-50 w-[240px] shrink-0 flex flex-col
+<aside class="fixed md:static inset-y-0 left-0 z-[100] w-[240px] shrink-0 flex flex-col
 	transition-transform duration-300 ease-out {open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
 	sidebar-glass">
 

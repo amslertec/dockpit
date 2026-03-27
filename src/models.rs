@@ -349,6 +349,24 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Notification Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationInfo {
+    pub id: i64,
+    #[serde(rename = "type")]
+    pub ntype: String,
+    pub title: String,
+    pub message: String,
+    pub read: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UnreadCount {
+    pub count: i64,
+}
+
 // === Scheduled Jobs Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

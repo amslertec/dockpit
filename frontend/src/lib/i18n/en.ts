@@ -523,4 +523,20 @@ export const en: Record<string, string> = {
 	'jobs.selectStack': 'Select stack',
 	'jobs.noJobs': 'No scheduled jobs',
 	'jobs.noJobsDesc': 'Add a job to automate tasks like update checks and system cleanup',
+
+	// === Notifications ===
+	'notifications.title': 'Notifications',
+	'notifications.markAllRead': 'Mark all as read',
+	'notifications.empty': 'No notifications',
+	'notifications.emptyDesc': 'You\'re all caught up!',
+	'notifications.justNow': 'just now',
+	'notifications.settings': 'Notification Settings',
+	'notifications.settingsDesc': 'Choose which notifications you want to receive',
+	'notifications.enabled': 'Enable notifications',
+	'notifications.jobSuccess': 'Scheduled job completed',
+	'notifications.jobError': 'Scheduled job failed',
+	'notifications.updateAvailable': 'Updates available',
+	'notifications.updateCurrent': 'All containers up to date',
+	'notifications.connectionError': 'Server connection problems',
+	'notifications.saved': 'Notification settings saved',
 };

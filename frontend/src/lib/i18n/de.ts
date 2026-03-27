@@ -520,4 +520,20 @@ export const de: Record<string, string> = {
 	'jobs.selectStack': 'Stack wählen',
 	'jobs.noJobs': 'Keine geplanten Jobs',
 	'jobs.noJobsDesc': 'Erstelle einen Job um Aufgaben wie Update-Checks und Systembereinigung zu automatisieren',
+
+	// === Benachrichtigungen ===
+	'notifications.title': 'Benachrichtigungen',
+	'notifications.markAllRead': 'Alle als gelesen markieren',
+	'notifications.empty': 'Keine Benachrichtigungen',
+	'notifications.emptyDesc': 'Alles erledigt!',
+	'notifications.justNow': 'gerade eben',
+	'notifications.settings': 'Benachrichtigungseinstellungen',
+	'notifications.settingsDesc': 'Wähle welche Benachrichtigungen du erhalten möchtest',
+	'notifications.enabled': 'Benachrichtigungen aktivieren',
+	'notifications.jobSuccess': 'Geplanter Job abgeschlossen',
+	'notifications.jobError': 'Geplanter Job fehlgeschlagen',
+	'notifications.updateAvailable': 'Updates verfügbar',
+	'notifications.updateCurrent': 'Alle Container aktuell',
+	'notifications.connectionError': 'Server-Verbindungsprobleme',
+	'notifications.saved': 'Benachrichtigungseinstellungen gespeichert',
 };

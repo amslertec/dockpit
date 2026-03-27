@@ -232,6 +232,15 @@ export interface StatsSnapshot {
 	timestamp: number;
 }
 
+export interface NotificationInfo {
+	id: number;
+	type: string;
+	title: string;
+	message: string;
+	read: boolean;
+	created_at: string;
+}
+
 export interface ScheduledJob {
 	id: string;
 	env_id: string;

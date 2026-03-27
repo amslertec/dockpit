@@ -2,7 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob};
+use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -99,6 +99,15 @@ impl Database {
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS scheduled_jobs (
@@ -504,6 +513,64 @@ impl Database {
             "UPDATE scheduled_jobs SET last_run = datetime('now'), last_result = ?1, last_message = ?2, next_run = ?3 WHERE id = ?4",
             params![result, message, next_run, id],
         )?;
+        Ok(())
+    }
+
+    // === Notifications ===
+
+    pub fn create_notification(&self, ntype: &str, title: &str, message: &str) -> Result<(), rusqlite::Error> {
+        // Check if notifications are enabled globally and for this type
+        let enabled = self.get_setting("notif_enabled").unwrap_or_else(|| "true".to_string());
+        if enabled == "false" { return Ok(()); }
+
+        let type_key = format!("notif_{}", ntype);
+        let type_enabled = self.get_setting(&type_key).unwrap_or_else(|| "true".to_string());
+        if type_enabled == "false" { return Ok(()); }
+
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notifications (type, title, message) VALUES (?1, ?2, ?3)",
+            params![ntype, title, message],
+        )?;
+        // Keep only last 100 notifications
+        conn.execute("DELETE FROM notifications WHERE id NOT IN (SELECT id FROM notifications ORDER BY created_at DESC LIMIT 100)", [])?;
+        Ok(())
+    }
+
+    pub fn get_notifications(&self, limit: i64) -> Vec<NotificationInfo> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, type, title, message, read, created_at FROM notifications ORDER BY created_at DESC LIMIT ?1"
+        ).unwrap();
+        stmt.query_map(params![limit], |row| {
+            let read: i32 = row.get(4)?;
+            Ok(NotificationInfo {
+                id: row.get(0)?, ntype: row.get(1)?, title: row.get(2)?,
+                message: row.get(3)?, read: read != 0, created_at: row.get(5)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_unread_count(&self) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM notifications WHERE read = 0", [], |row| row.get(0)).unwrap_or(0)
+    }
+
+    pub fn mark_notification_read(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE notifications SET read = 1 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn mark_all_notifications_read(&self) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE notifications SET read = 1 WHERE read = 0", [])?;
+        Ok(())
+    }
+
+    pub fn delete_notification(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM notifications WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

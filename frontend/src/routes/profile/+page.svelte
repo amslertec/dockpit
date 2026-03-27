@@ -6,16 +6,26 @@
 	import type { UserProfile, TotpSetupResponse } from '$lib/api/types';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TextInput from '$lib/components/ui/TextInput.svelte';
+	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 
 	let profile = $state<UserProfile | null>(null);
-	let activeTab = $state(1); // 0=General, 1=Password, 2=2FA
+	let activeTab = $state(1); // 0=General, 1=Password, 2=2FA, 3=Notifications
 
 	// Password
 	let curPw = $state('');
 	let newPw = $state('');
 	let newPw2 = $state('');
 	let pwError = $state('');
+
+	// Notification preferences
+	let notifEnabled = $state(true);
+	let notifJobSuccess = $state(true);
+	let notifJobError = $state(true);
+	let notifUpdateAvailable = $state(true);
+	let notifUpdateCurrent = $state(false);
+	let notifConnectionError = $state(true);
+	let notifSaving = $state(false);
 
 	// TOTP
 	let totpSetup = $state<TotpSetupResponse | null>(null);
@@ -28,7 +38,35 @@
 	onMount(async () => {
 		const r = await api.get<UserProfile>('/profile');
 		if (r.success) profile = r.data!;
+
+		const s = await api.get<{ settings: Record<string, string> }>('/settings');
+		if (s.success && s.data?.settings) {
+			const st = s.data.settings;
+			notifEnabled = st.notif_enabled !== 'false';
+			notifJobSuccess = st.notif_job_success !== 'false';
+			notifJobError = st.notif_job_error !== 'false';
+			notifUpdateAvailable = st.notif_update_available !== 'false';
+			notifUpdateCurrent = st.notif_update_current === 'true';
+			notifConnectionError = st.notif_connection_error !== 'false';
+		}
 	});
+
+	async function saveNotifications() {
+		notifSaving = true;
+		const r = await api.post<string>('/settings', {
+			settings: {
+				notif_enabled: String(notifEnabled),
+				notif_job_success: String(notifJobSuccess),
+				notif_job_error: String(notifJobError),
+				notif_update_available: String(notifUpdateAvailable),
+				notif_update_current: String(notifUpdateCurrent),
+				notif_connection_error: String(notifConnectionError),
+			}
+		});
+		notifSaving = false;
+		if (r.success) toasts.success($t('notifications.saved'));
+		else toasts.error(r.error || $t('common.error'));
+	}
 
 	async function changePw(e: Event) {
 		e.preventDefault();
@@ -79,6 +117,7 @@
 		{ id: 0, label: $t('profile.general') },
 		{ id: 1, label: $t('profile.password') },
 		{ id: 2, label: $t('profile.2fa') },
+		{ id: 3, label: $t('notifications.settings') },
 	];
 
 </script>
@@ -189,7 +228,56 @@
 							</div>
 						{/if}
 					{/if}
-				{/if}
+				<!-- Tab 3: Notifications -->
+			{:else if activeTab === 3}
+				<h3 class="text-sm font-semibold text-primary mb-1">{$t('notifications.settings')}</h3>
+				<p class="text-xs text-secondary mb-5">{$t('notifications.settingsDesc')}</p>
+
+				<div class="space-y-4 max-w-sm">
+					<CustomCheckbox
+						checked={notifEnabled}
+						onchange={(v) => notifEnabled = v}
+						label={$t('notifications.enabled')}
+					/>
+
+					<div class="border-t border-theme pt-4 space-y-3 {notifEnabled ? '' : 'opacity-50 pointer-events-none'}">
+						<CustomCheckbox
+							checked={notifJobSuccess}
+							onchange={(v) => notifJobSuccess = v}
+							label={$t('notifications.jobSuccess')}
+							disabled={!notifEnabled}
+						/>
+						<CustomCheckbox
+							checked={notifJobError}
+							onchange={(v) => notifJobError = v}
+							label={$t('notifications.jobError')}
+							disabled={!notifEnabled}
+						/>
+						<CustomCheckbox
+							checked={notifUpdateAvailable}
+							onchange={(v) => notifUpdateAvailable = v}
+							label={$t('notifications.updateAvailable')}
+							disabled={!notifEnabled}
+						/>
+						<CustomCheckbox
+							checked={notifUpdateCurrent}
+							onchange={(v) => notifUpdateCurrent = v}
+							label={$t('notifications.updateCurrent')}
+							disabled={!notifEnabled}
+						/>
+						<CustomCheckbox
+							checked={notifConnectionError}
+							onchange={(v) => notifConnectionError = v}
+							label={$t('notifications.connectionError')}
+							disabled={!notifEnabled}
+						/>
+					</div>
+
+					<div class="pt-2">
+						<Button variant="primary" size="md" onclick={saveNotifications} loading={notifSaving}>{$t('common.save')}</Button>
+					</div>
+				</div>
+			{/if}
 			</div>
 		</div>
 	</div>

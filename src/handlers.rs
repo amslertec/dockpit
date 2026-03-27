@@ -621,6 +621,25 @@ pub async fn run_update_check(
         state_clone.update_check_running.store(false, Ordering::SeqCst);
         tracing::info!("Background update check completed");
 
+        // Create notification
+        let results = state_clone.db.get_latest_update_checks();
+        let total = results.len();
+        let outdated_count = results.iter().filter(|r| r.outdated).count();
+        if outdated_count > 0 {
+            let names: Vec<_> = results.iter().filter(|r| r.outdated).take(5).map(|r| r.container_name.clone()).collect();
+            state_clone.db.create_notification(
+                "update_available",
+                &format!("{} updates available", outdated_count),
+                &format!("{} of {} containers have updates: {}", outdated_count, total, names.join(", ")),
+            ).ok();
+        } else {
+            state_clone.db.create_notification(
+                "update_current",
+                "All containers up to date",
+                &format!("{} containers checked, all current", total),
+            ).ok();
+        }
+
         // Send webhook notification if configured
         let webhook_url = state_clone.db.get_setting("webhook_url");
         let webhook_enabled = state_clone.db.get_setting("webhook_enabled");
@@ -1516,7 +1535,14 @@ pub async fn env_check_status(
     let url = format!("{}/health", env.url);
     let status = match client.get(&url).send().await {
         Ok(r) if r.status().is_success() => "online",
-        _ => "offline",
+        _ => {
+            state.db.create_notification(
+                "connection_error",
+                &format!("Server offline: {}", env.name),
+                &format!("Cannot reach agent at {}", env.url),
+            ).ok();
+            "offline"
+        }
     };
     Json(ApiResponse::ok(status.to_string()))
 }
@@ -1743,6 +1769,49 @@ pub async fn remove_registry(
     }
 }
 
+// === Notifications ===
+
+pub async fn get_notifications(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<NotificationInfo>>> {
+    Json(ApiResponse::ok(state.db.get_notifications(50)))
+}
+
+pub async fn get_unread_count(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<UnreadCount>> {
+    Json(ApiResponse::ok(UnreadCount { count: state.db.get_unread_count() }))
+}
+
+pub async fn mark_notification_read(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.mark_notification_read(id) {
+        Ok(_) => Json(ApiResponse::ok("OK".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn mark_all_notifications_read(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<String>> {
+    match state.db.mark_all_notifications_read() {
+        Ok(_) => Json(ApiResponse::ok("OK".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn delete_notification(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_notification(id) {
+        Ok(_) => Json(ApiResponse::ok("OK".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
 // === Scheduled Jobs ===
 
 pub async fn list_scheduled_jobs(
@@ -1911,6 +1980,13 @@ pub async fn execute_job(state: Arc<AppState>, job: ScheduledJob) {
         .unwrap_or_default();
 
     state.db.update_job_result(&job.id, &result, &message, &next_run).ok();
+
+    // Create notification
+    let env_name = state.db.get_environment(&job.env_id).map(|e| e.name).unwrap_or_default();
+    let title = format!("{}: {}", job.job_type.replace('_', " "), env_name);
+    let ntype = if result == "success" { "job_success" } else { "job_error" };
+    state.db.create_notification(ntype, &title, &message).ok();
+
     tracing::info!("Scheduled job {} ({}) completed: {} - {}", job.id, job.job_type, result, message);
 }
 
