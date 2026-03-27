@@ -327,6 +327,28 @@ pub struct UpdateCheckStatus {
     pub last_check: Option<String>,
 }
 
+// === Live Stats Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerStats {
+    pub id: String,
+    pub name: String,
+    pub cpu_percent: f64,
+    pub memory_usage: u64,
+    pub memory_limit: u64,
+    pub memory_percent: f64,
+    pub network_rx: u64,
+    pub network_tx: u64,
+    pub block_read: u64,
+    pub block_write: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StatsSnapshot {
+    pub containers: Vec<ContainerStats>,
+    pub timestamp: i64,
+}
+
 // === Settings Models ===
 
 #[derive(Debug, Serialize, Deserialize)]

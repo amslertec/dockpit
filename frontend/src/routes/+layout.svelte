@@ -35,6 +35,7 @@
 		'/environments': 'nav.environments',
 		'/users': 'nav.users',
 		'/settings': 'nav.settings',
+		'/monitoring': 'monitoring.title',
 		'/updates': 'updates.title',
 		'/profile': 'nav.profile'
 	};

@@ -1187,6 +1187,94 @@ async fn proxy_terminal(
     tokio::select! { _ = s2a => {}, _ = a2s => {} }
 }
 
+// === Live Stats WebSocket ===
+
+pub async fn env_stats_live(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+    Query(query): Query<TerminalQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if auth::validate_token(&query.token).is_err() {
+        return axum::http::StatusCode::UNAUTHORIZED.into_response();
+    }
+    let env = match state.db.get_environment(&env_id) {
+        Some(e) => e,
+        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if env.is_local {
+        ws.on_upgrade(move |socket| handle_stats_local(socket, state))
+    } else {
+        let agent_url = env.url.clone();
+        let agent_token = env.agent_token.clone().unwrap_or_default();
+        ws.on_upgrade(move |socket| proxy_stats_to_agent(socket, agent_url, agent_token))
+    }
+}
+
+async fn handle_stats_local(mut socket: WebSocket, state: Arc<AppState>) {
+    use futures_util::SinkExt;
+
+    loop {
+        let stats = state.docker.get_all_container_stats().await;
+        let snapshot = StatsSnapshot {
+            containers: stats,
+            timestamp: chrono::Utc::now().timestamp(),
+        };
+        let json = match serde_json::to_string(&snapshot) {
+            Ok(j) => j,
+            Err(_) => break,
+        };
+        if socket.send(Message::Text(json.into())).await.is_err() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+async fn proxy_stats_to_agent(server_ws: WebSocket, agent_url: String, agent_token: String) {
+    use futures_util::{StreamExt, SinkExt};
+    use tokio_tungstenite::tungstenite;
+
+    let agent_ws_url = agent_url.replace("http://", "ws://").replace("https://", "wss://");
+    let url = format!("{}/api/stats?token={}", agent_ws_url, urlencoding::encode(&agent_token));
+
+    let agent_conn = match tokio_tungstenite::connect_async(&url).await {
+        Ok((ws, _)) => ws,
+        Err(e) => {
+            tracing::error!("Agent stats WebSocket failed: {}", e);
+            let (mut tx, _) = server_ws.split();
+            let _ = tx.send(Message::Text(format!("{{\"error\":\"{}\"}}", e).into())).await;
+            return;
+        }
+    };
+
+    let (mut _agent_tx, mut agent_rx) = agent_conn.split();
+    let (mut server_tx, mut server_rx) = server_ws.split();
+
+    // Agent → Server (stats data)
+    let a2s = tokio::spawn(async move {
+        while let Some(Ok(msg)) = agent_rx.next().await {
+            let server_msg = match msg {
+                tungstenite::Message::Text(t) => Message::Text(t.into()),
+                tungstenite::Message::Binary(b) => Message::Binary(b.into()),
+                tungstenite::Message::Close(_) => break,
+                _ => continue,
+            };
+            if server_tx.send(server_msg).await.is_err() { break; }
+        }
+    });
+
+    // Server → Agent (close signal)
+    let s2a = tokio::spawn(async move {
+        while let Some(Ok(msg)) = server_rx.next().await {
+            if matches!(msg, Message::Close(_)) { break; }
+        }
+    });
+
+    tokio::select! { _ = s2a => {}, _ = a2s => {} }
+}
+
 // === Environment-scoped Images ===
 
 pub async fn env_images(

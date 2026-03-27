@@ -1,5 +1,5 @@
 use bollard::Docker;
-use bollard::container::{ListContainersOptions, LogsOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions};
+use bollard::container::{ListContainersOptions, LogsOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions, StatsOptions};
 use bollard::image::{ListImagesOptions, RemoveImageOptions};
 use bollard::volume::ListVolumesOptions;
 use bollard::network::ListNetworksOptions;
@@ -492,6 +492,68 @@ impl DockerClient {
             status: "online".into(),
             server_type: "Standalone".into(),
         }
+    }
+
+    pub async fn get_all_container_stats(&self) -> Vec<ContainerStats> {
+        let containers = match self.list_containers().await {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+
+        let running: Vec<_> = containers.into_iter().filter(|c| c.state == "running").collect();
+        let mut stats = Vec::with_capacity(running.len());
+
+        for c in &running {
+            let options = StatsOptions { stream: false, one_shot: true };
+            let mut stream = self.docker.stats(&c.id, Some(options));
+            if let Some(Ok(s)) = stream.next().await {
+                let cpu_percent = {
+                    let cpu_delta = s.cpu_stats.cpu_usage.total_usage as f64
+                        - s.precpu_stats.cpu_usage.total_usage as f64;
+                    let sys_delta = s.cpu_stats.system_cpu_usage.unwrap_or(0) as f64
+                        - s.precpu_stats.system_cpu_usage.unwrap_or(0) as f64;
+                    let num_cpus = s.cpu_stats.online_cpus.unwrap_or(1) as f64;
+                    if sys_delta > 0.0 && cpu_delta >= 0.0 {
+                        (cpu_delta / sys_delta) * num_cpus * 100.0
+                    } else {
+                        0.0
+                    }
+                };
+
+                let mem_usage = s.memory_stats.usage.unwrap_or(0);
+                let mem_limit = s.memory_stats.limit.unwrap_or(1);
+                let mem_percent = if mem_limit > 0 { (mem_usage as f64 / mem_limit as f64) * 100.0 } else { 0.0 };
+
+                let (net_rx, net_tx) = s.networks.as_ref().map(|nets| {
+                    nets.values().fold((0u64, 0u64), |(rx, tx), n| (rx + n.rx_bytes, tx + n.tx_bytes))
+                }).unwrap_or((0, 0));
+
+                let (blk_r, blk_w) = s.blkio_stats.io_service_bytes_recursive.as_ref().map(|entries| {
+                    entries.iter().fold((0u64, 0u64), |(r, w), e| {
+                        match e.op.as_str() {
+                            "read" | "Read" => (r + e.value, w),
+                            "write" | "Write" => (r, w + e.value),
+                            _ => (r, w),
+                        }
+                    })
+                }).unwrap_or((0, 0));
+
+                stats.push(ContainerStats {
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    cpu_percent: (cpu_percent * 100.0).round() / 100.0,
+                    memory_usage: mem_usage,
+                    memory_limit: mem_limit,
+                    memory_percent: (mem_percent * 100.0).round() / 100.0,
+                    network_rx: net_rx,
+                    network_tx: net_tx,
+                    block_read: blk_r,
+                    block_write: blk_w,
+                });
+            }
+        }
+
+        stats
     }
 
     pub async fn get_dashboard_stats(&self) -> DashboardStats {

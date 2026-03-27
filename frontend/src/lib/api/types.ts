@@ -211,3 +211,23 @@ export interface UpdateCheckResult {
 export interface SettingsMap {
 	settings: Record<string, string>;
 }
+
+// === Live Stats ===
+
+export interface ContainerStats {
+	id: string;
+	name: string;
+	cpu_percent: number;
+	memory_usage: number;
+	memory_limit: number;
+	memory_percent: number;
+	network_rx: number;
+	network_tx: number;
+	block_read: number;
+	block_write: number;
+}
+
+export interface StatsSnapshot {
+	containers: ContainerStats[];
+	timestamp: number;
+}

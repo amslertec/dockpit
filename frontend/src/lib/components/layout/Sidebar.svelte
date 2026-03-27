@@ -11,6 +11,7 @@
 
 	const navItems = [
 		{ href: '/dashboard', key: 'nav.dashboard', icon: 'dash' },
+		{ href: '/monitoring', key: 'monitoring.title', icon: 'monitor' },
 		{ href: '/stacks', key: 'nav.stacks', icon: 'stack' },
 		{ href: '/containers', key: 'nav.containers', icon: 'box' },
 		{ href: '/images', key: 'nav.images', icon: 'img' },
@@ -59,6 +60,8 @@
 							<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
 						{:else if item.icon === 'dash'}
 							<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+						{:else if item.icon === 'monitor'}
+							<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
 						{:else if item.icon === 'box'}
 							<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
 						{:else if item.icon === 'img'}

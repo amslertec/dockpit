@@ -776,6 +776,100 @@ async fn agent_redeploy_stack(State(state): State<Arc<AgentState>>, headers: Hea
 
 // === Docker Registry Login ===
 
+// === Live Stats WebSocket ===
+
+#[derive(Deserialize)]
+struct StatsQuery {
+    token: Option<String>,
+}
+
+async fn agent_stats_live(
+    State(state): State<Arc<AgentState>>,
+    Query(query): Query<StatsQuery>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let authed = {
+        let lock = state.paired_token.read().unwrap();
+        match lock.as_ref() {
+            None => true,
+            Some(stored) => {
+                let from_header = headers.get("X-Agent-Token").and_then(|v| v.to_str().ok());
+                let from_query = query.token.as_deref();
+                from_header == Some(stored.as_str()) || from_query == Some(stored.as_str())
+            }
+        }
+    };
+    if !authed {
+        return axum::http::StatusCode::UNAUTHORIZED.into_response();
+    }
+    let docker = state.docker.clone();
+    ws.on_upgrade(move |socket| handle_agent_stats(socket, docker))
+}
+
+async fn handle_agent_stats(mut socket: axum::extract::ws::WebSocket, docker: Docker) {
+    use futures_util::SinkExt;
+    use bollard::container::{ListContainersOptions, StatsOptions};
+
+    loop {
+        let mut filters = std::collections::HashMap::new();
+        filters.insert("status".to_string(), vec!["running".to_string()]);
+        let containers = match docker.list_containers(Some(ListContainersOptions {
+            all: true, filters, ..Default::default()
+        })).await {
+            Ok(c) => c,
+            Err(_) => break,
+        };
+
+        let mut stats_list = Vec::new();
+        for c in &containers {
+            let id = match &c.id { Some(id) => id.clone(), None => continue };
+            let name = c.names.as_ref().and_then(|n| n.first()).map(|n| n.trim_start_matches('/').to_string()).unwrap_or_default();
+
+            let options = StatsOptions { stream: false, one_shot: true };
+            let mut stream = docker.stats(&id, Some(options));
+            if let Some(Ok(s)) = futures_lite::StreamExt::next(&mut stream).await {
+                let cpu_percent = {
+                    let cpu_delta = s.cpu_stats.cpu_usage.total_usage as f64 - s.precpu_stats.cpu_usage.total_usage as f64;
+                    let sys_delta = s.cpu_stats.system_cpu_usage.unwrap_or(0) as f64 - s.precpu_stats.system_cpu_usage.unwrap_or(0) as f64;
+                    let num_cpus = s.cpu_stats.online_cpus.unwrap_or(1) as f64;
+                    if sys_delta > 0.0 && cpu_delta >= 0.0 { (cpu_delta / sys_delta) * num_cpus * 100.0 } else { 0.0 }
+                };
+                let mem_usage = s.memory_stats.usage.unwrap_or(0);
+                let mem_limit = s.memory_stats.limit.unwrap_or(1);
+                let mem_percent = if mem_limit > 0 { (mem_usage as f64 / mem_limit as f64) * 100.0 } else { 0.0 };
+                let (net_rx, net_tx) = s.networks.as_ref().map(|nets| {
+                    nets.values().fold((0u64, 0u64), |(rx, tx), n| (rx + n.rx_bytes, tx + n.tx_bytes))
+                }).unwrap_or((0, 0));
+                let (blk_r, blk_w) = s.blkio_stats.io_service_bytes_recursive.as_ref().map(|entries| {
+                    entries.iter().fold((0u64, 0u64), |(r, w), e| {
+                        match e.op.as_deref() {
+                            Some("read") | Some("Read") => (r + e.value, w),
+                            Some("write") | Some("Write") => (r, w + e.value),
+                            _ => (r, w),
+                        }
+                    })
+                }).unwrap_or((0, 0));
+
+                stats_list.push(serde_json::json!({
+                    "id": id, "name": name,
+                    "cpu_percent": (cpu_percent * 100.0).round() / 100.0,
+                    "memory_usage": mem_usage, "memory_limit": mem_limit,
+                    "memory_percent": (mem_percent * 100.0).round() / 100.0,
+                    "network_rx": net_rx, "network_tx": net_tx,
+                    "block_read": blk_r, "block_write": blk_w,
+                }));
+            }
+        }
+
+        let snapshot = serde_json::json!({ "containers": stats_list, "timestamp": chrono::Utc::now().timestamp() });
+        if socket.send(axum::extract::ws::Message::Text(snapshot.to_string().into())).await.is_err() { break; }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}
+
+// === Docker Registry Login ===
+
 #[derive(Debug, Serialize, Deserialize)]
 struct RegistryLoginReq { registry: String, username: String, password: String }
 
@@ -1069,6 +1163,7 @@ async fn main() {
         .route("/api/containers/{id}/check-update", post(check_container_update))
         .route("/api/containers/{id}/recreate", post(recreate_container))
         .route("/api/containers/{id}/terminal", get(agent_terminal))
+        .route("/api/stats", get(agent_stats_live))
         .route("/api/docker/login", post(agent_docker_login))
         .route("/api/docker/logout/{registry}", delete(agent_docker_logout))
         .route("/api/images/{id}", delete(remove_image))

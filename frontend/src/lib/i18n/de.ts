@@ -460,4 +460,23 @@ export const de: Record<string, string> = {
 	'filter.unused': 'Ungenutzt',
 	'filter.updates': 'Updates',
 	'filter.current': 'Aktuell',
+
+	// === Monitoring ===
+	'monitoring.title': 'Monitoring',
+	'monitoring.cpu': 'CPU',
+	'monitoring.memory': 'Speicher',
+	'monitoring.network': 'Netzwerk',
+	'monitoring.blockio': 'Block I/O',
+	'monitoring.container': 'Container',
+	'monitoring.cpuUsage': 'CPU-Auslastung',
+	'monitoring.memUsage': 'Speicherauslastung',
+	'monitoring.netIO': 'Netzwerk I/O',
+	'monitoring.runningContainers': 'Laufende Container',
+	'monitoring.noContainers': 'Keine laufenden Container',
+	'monitoring.noData': 'Warte auf Daten...',
+	'monitoring.viewAll': 'Alle anzeigen →',
+	'monitoring.read': 'Lesen',
+	'monitoring.write': 'Schreiben',
+	'monitoring.rx': 'RX',
+	'monitoring.tx': 'TX',
 };

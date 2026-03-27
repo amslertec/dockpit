@@ -15,6 +15,7 @@
 	import UptimeWidget from '$lib/components/widgets/UptimeWidget.svelte';
 	import UnusedResourcesWidget from '$lib/components/widgets/UnusedResourcesWidget.svelte';
 	import QuickActionsWidget from '$lib/components/widgets/QuickActionsWidget.svelte';
+	import ResourceMonitorWidget from '$lib/components/widgets/ResourceMonitorWidget.svelte';
 	import type { ServerOverview, SystemInfo } from '$lib/api/types';
 
 	let servers = $state<ServerOverview[]>([]);
@@ -42,6 +43,7 @@
 		{ type: 'uptime', label: $t('home.widgetUptime'), icon: '⏱' },
 		{ type: 'unused-resources', label: $t('home.widgetCleanup'), icon: '🧹' },
 		{ type: 'quick-actions', label: $t('home.widgetActions'), icon: '🚀' },
+		{ type: 'resource-monitor', label: $t('monitoring.title'), icon: '📈' },
 	];
 
 	function hasType(type: string): boolean { return $widgets.some(w => w.type === type); }
@@ -51,7 +53,8 @@
 
 	function widgetTitle(w: WidgetConfig): string {
 		if (w.type === 'server') return getServer(w.envId)?.name || $t('home.servers');
-		return singletonTypes.find(s => s.type === w.type)?.label || 'Widget';
+		const found = singletonTypes.find(s => s.type === w.type);
+		return found?.label || 'Widget';
 	}
 
 	onMount(async () => {
@@ -363,6 +366,8 @@
 							<UnusedResourcesWidget />
 						{:else if w.type === 'quick-actions'}
 							<QuickActionsWidget />
+						{:else if w.type === 'resource-monitor'}
+							<ResourceMonitorWidget />
 						{/if}
 					</div>
 				</div>

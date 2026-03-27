@@ -206,7 +206,8 @@ async fn main() {
 
     // WebSocket routes (auth via query param)
     let ws_routes = Router::new()
-        .route("/api/env/{env_id}/containers/{container_id}/terminal", get(handlers::env_container_terminal));
+        .route("/api/env/{env_id}/containers/{container_id}/terminal", get(handlers::env_container_terminal))
+        .route("/api/env/{env_id}/stats/live", get(handlers::env_stats_live));
 
     let app = Router::new()
         .merge(public_routes)
