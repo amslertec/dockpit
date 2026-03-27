@@ -487,108 +487,18 @@ async fn recreate_container(
 ) -> Result<Json<ApiResponse<String>>, StatusCode> {
     state.check_auth(&headers)?;
 
-    // Check if this is a self-update (agent trying to recreate itself)
+    // Block self-update — agent cannot recreate itself safely
     let own_hostname = &state.hostname;
     let is_self = id.starts_with(own_hostname) || own_hostname.starts_with(&id[..std::cmp::min(id.len(), 12)]);
+    if is_self {
+        return Ok(Json(ApiResponse::err(
+            "The DockPit Agent cannot update itself via the web UI. Please update directly on the server: docker compose pull && docker compose up -d"
+        )));
+    }
 
     let inspect = state.docker.inspect_container(&id, None).await.map_err(|_| StatusCode::NOT_FOUND)?;
     let stack = inspect.config.as_ref().and_then(|c| c.labels.as_ref()).and_then(|l| l.get("com.docker.compose.project")).cloned();
     let service = inspect.config.as_ref().and_then(|c| c.labels.as_ref()).and_then(|l| l.get("com.docker.compose.service")).cloned();
-
-    // Self-update: pull image, then use docker CLI to recreate in background
-    if is_self {
-        let image = inspect.config.as_ref().and_then(|c| c.image.clone()).unwrap_or_default();
-        let name = inspect.name.clone().unwrap_or_default().trim_start_matches('/').to_string();
-
-        // Step 1: Pull new image first
-        use bollard::image::CreateImageOptions;
-        let (repo, tag) = if let Some((r, t)) = image.split_once(':') { (r.to_string(), t.to_string()) } else { (image.clone(), "latest".to_string()) };
-        let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
-        while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
-
-        // Step 2: If compose service, use compose to recreate (handles everything)
-        if let (Some(ref stack_name), Some(ref svc)) = (&stack, &service) {
-            let dir = state.stacks_dir.join(stack_name);
-            if dir.exists() {
-                // Spawn background compose up (will replace this container)
-                let dir_str = dir.to_string_lossy().to_string();
-                let svc_clone = svc.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    let _ = tokio::process::Command::new("docker")
-                        .args(["compose", "up", "-d", "--force-recreate", "--pull", "always", &svc_clone])
-                        .current_dir(&dir_str)
-                        .output().await;
-                });
-                return Ok(Json(ApiResponse::ok(format!("Self-update initiated for '{}'. Agent will restart in ~5 seconds.", name))));
-            }
-        }
-
-        // Standalone: spawn a helper container that will recreate us
-        // The helper mounts the Docker socket and runs: stop → rm → create → start
-        let docker = state.docker.clone();
-        let name_clone = name.clone();
-        let image_clone = image.clone();
-        let id_clone = id.clone();
-
-        // Collect the original container config for recreation
-        let env_vars = inspect.config.as_ref().and_then(|c| c.env.clone()).unwrap_or_default();
-        let ports = inspect.host_config.as_ref()
-            .and_then(|h| h.port_bindings.clone())
-            .map(|pb| pb.iter().map(|(k, v)| format!("-p {}:{}", v.as_ref().and_then(|v| v.first()).and_then(|b| b.host_port.as_ref()).unwrap_or(&"".to_string()), k.split('/').next().unwrap_or(""))).collect::<Vec<_>>())
-            .unwrap_or_default();
-        let volumes = inspect.host_config.as_ref()
-            .and_then(|h| h.binds.clone())
-            .map(|b| b.iter().map(|v| format!("-v {}", v)).collect::<Vec<_>>())
-            .unwrap_or_default();
-        let restart_policy = inspect.host_config.as_ref()
-            .and_then(|h| h.restart_policy.as_ref())
-            .and_then(|r| r.name.as_ref())
-            .map(|n| format!("--restart {}", n))
-            .unwrap_or_default();
-
-        let mut run_args = vec!["run".to_string(), "-d".to_string(), "--name".to_string(), name_clone.clone()];
-        for p in &ports { run_args.extend(p.split_whitespace().map(String::from)); }
-        for v in &volumes { run_args.extend(v.split_whitespace().map(String::from)); }
-        for e in &env_vars { run_args.push("-e".to_string()); run_args.push(e.clone()); }
-        if !restart_policy.is_empty() { run_args.extend(restart_policy.split_whitespace().map(String::from)); }
-        run_args.push(image_clone.clone());
-
-        let run_cmd = run_args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect::<Vec<_>>().join(" ");
-        let helper_script = format!(
-            "sleep 3 && docker stop {} && docker rm -f {} && docker {} && echo 'Self-update complete'",
-            name_clone, name_clone, run_cmd
-        );
-
-        tokio::spawn(async move {
-            // Launch a helper container that will swap us out
-            let _ = docker.create_container(
-                Some(bollard::container::CreateContainerOptions { name: format!("{}-updater", name_clone), ..Default::default() }),
-                bollard::container::Config {
-                    image: Some("docker:cli".to_string()),
-                    cmd: Some(vec!["sh".to_string(), "-c".to_string(), helper_script]),
-                    host_config: Some(bollard::models::HostConfig {
-                        binds: Some(vec!["/var/run/docker.sock:/var/run/docker.sock".to_string()]),
-                        auto_remove: Some(true),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }
-            ).await.and_then(|c| {
-                let docker2 = docker.clone();
-                let cid = c.id;
-                tokio::spawn(async move {
-                    let _ = docker2.start_container(&cid, None::<bollard::container::StartContainerOptions<String>>).await;
-                });
-                Ok(())
-            });
-        });
-
-        return Ok(Json(ApiResponse::ok(format!(
-            "Self-update initiated for '{}'. A helper container will recreate the agent in ~5 seconds.",
-            name
-        ))));
-    }
 
     if let (Some(stack_name), Some(svc)) = (stack, service) {
         let dir = state.stacks_dir.join(&stack_name);
