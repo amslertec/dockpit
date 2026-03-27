@@ -2,9 +2,7 @@
 # No configuration needed! Just start it and connect from the DockPit UI.
 services:
   dockpit-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
+    image: amslertec/dockpit-agent:latest
     container_name: dockpit-agent
     restart: unless-stopped
     ports:

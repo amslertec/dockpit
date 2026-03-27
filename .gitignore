@@ -22,6 +22,7 @@ Thumbs.db
 .env.*
 !.env.example
 docker-compose.yml
+docker-compose.agent.yml
 docker-push.sh
 
 # === Docker ===
