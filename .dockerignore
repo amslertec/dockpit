@@ -1,7 +1,44 @@
-target/
+# Git
 .git/
-*.md
 .gitignore
+
+# Rust build artifacts
+target/
+
+# Frontend build artifacts (rebuilt in Docker)
 frontend/node_modules/
 frontend/.svelte-kit/
 frontend/build/
+frontend/.vite/
+
+# Documentation (not needed in image)
+*.md
+LICENSE
+STYLE_GUIDE.md
+frontend/STYLE_GUIDE.md
+frontend/README.md
+
+# Docker files (not needed in image)
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile.agent
+docker-push.sh
+.dockerignore
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Environment / Secrets
+.env
+.env.*
+
+# Claude Code
+.claude/
+
+# Data volumes (if mounted locally)
+dockpit_data/

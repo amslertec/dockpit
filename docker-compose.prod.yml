@@ -14,7 +14,7 @@ services:
       - /var/docker/container:/stacks
     environment:
       - DOCKPIT_PORT=5533
-      - DOCKPIT_JWT_SECRET=zcH5of5cdG2GNWr2QEudGGXaezgh6nek
+      - DOCKPIT_JWT_SECRET=change-me-to-a-secure-random-string
       - DOCKPIT_STACKS_DIR=/stacks
       - DOCKPIT_HTTPS_PORT=5539
 

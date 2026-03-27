@@ -21,6 +21,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+docker-compose.yml
+docker-push.sh
 
 # === Docker ===
 dockpit_data/
