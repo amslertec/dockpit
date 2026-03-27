@@ -12,10 +12,22 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Environment Switching** — Quickly switch between servers from the topbar dropdown
 - **Real-time Status** — Live status indicators for all connected servers
 
+### Live Resource Monitoring
+- **Real-time Stats** — CPU, RAM, Network I/O per container via WebSocket (updates every 2s)
+- **Dedicated /monitoring Page** — Full table with sortable columns, color-coded progress bars, search
+- **Dashboard Widget** — Compact Top 5 view for the Home page
+- **Summary Cards** — Total CPU%, RAM usage, Network I/O, container count
+
+### Quick Command Palette (Ctrl+K)
+- **Global Search** — Search across pages, containers, stacks, and servers
+- **Keyboard Navigation** — Arrow keys, Enter to select, Escape to close
+- **Grouped Results** — Categories with icons and status badges
+- **Instant Navigation** — Jump to any page or resource in seconds
+
 ### Container Management
 - **Full Lifecycle** — Start, stop, restart, recreate, and remove containers
 - **Bulk Actions** — Select multiple containers for batch operations
-- **Image Update Detection** — Automatically check if container images have newer versions available
+- **Digest-based Update Detection** — Fast registry API checks without pulling images (works with private repos)
 - **Recreate with Pull** — One-click pull latest image + recreate container
 - **Web Terminal** — Interactive shell access directly in the browser (xterm.js)
 - **Log Viewer** — Real-time log streaming with ANSI color support, auto-scroll, line wrapping, and download
@@ -45,6 +57,7 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
   - Uptime Monitor — Longest-running containers
   - Unused Resources — Find resources to clean up
   - Quick Actions — One-click system cleanup and update checks
+  - Resource Monitor — Live CPU/RAM/Network stats (Top 5 containers)
 
 ### Update Monitor
 - **Automatic Checks** — Schedule periodic image update checks (6h/12h/24h/48h)
