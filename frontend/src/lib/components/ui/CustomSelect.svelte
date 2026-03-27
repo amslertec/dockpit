@@ -55,10 +55,17 @@
 		const openAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight;
 		const w = Math.max(rect.width, 180);
 
+		// Check if dropdown would overflow right edge
+		let left = rect.left;
+		if (left + w > window.innerWidth - 8) {
+			left = rect.right - w;
+			if (left < 8) left = 8;
+		}
+
 		if (openAbove) {
-			dropdownStyle = `position:fixed; left:${rect.left}px; bottom:${window.innerHeight - rect.top + 4}px; width:${w}px; z-index:99999;`;
+			dropdownStyle = `position:fixed; left:${left}px; bottom:${window.innerHeight - rect.top + 4}px; width:${w}px; z-index:99999;`;
 		} else {
-			dropdownStyle = `position:fixed; left:${rect.left}px; top:${rect.bottom + 4}px; width:${w}px; z-index:99999;`;
+			dropdownStyle = `position:fixed; left:${left}px; top:${rect.bottom + 4}px; width:${w}px; z-index:99999;`;
 		}
 	}
 
