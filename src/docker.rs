@@ -121,27 +121,40 @@ impl DockerClient {
         self.docker.inspect_image(name).await
     }
 
-    /// Check if image has update available by comparing local digest with registry.
-    /// Returns (outdated: bool, local_id, remote_digest)
+    /// Check if image has update available by comparing local repo digest with registry digest.
+    /// Uses Docker Distribution API (no pull needed — fast, only a few KB).
+    /// Returns (outdated: bool, local_digest, remote_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
-        // Get local image ID
         let local = self.docker.inspect_image(image).await
-            .map_err(|e| format!("Image nicht gefunden: {}", e))?;
-        let local_id = local.id.unwrap_or_default();
-        let _local_digests = local.repo_digests.unwrap_or_default();
+            .map_err(|e| format!("Image not found: {}", e))?;
+        let local_id = local.id.clone().unwrap_or_default();
+        let local_digests = local.repo_digests.unwrap_or_default();
 
-        // Try pulling to check for updates (registry inspect not always available)
-        if let Err(_) = self.pull_image(image).await {
-            // Pull failed (private registry, no auth, etc.) - assume up to date
+        // Parse image name → registry, repo, tag
+        let (registry, repo, tag) = parse_image_ref(image);
+
+        // Get local repo digest (sha256:...)
+        let local_digest = local_digests.iter()
+            .find(|d| d.contains('@'))
+            .map(|d| d.split('@').nth(1).unwrap_or("").to_string())
+            .unwrap_or_default();
+
+        // Query registry for remote digest (no pull!)
+        let remote_digest = match fetch_registry_digest(&registry, &repo, &tag).await {
+            Ok(d) => d,
+            Err(_) => {
+                // Registry query failed — fall back to local_id comparison
+                return Ok((false, local_id.clone(), local_id));
+            }
+        };
+
+        if local_digest.is_empty() {
+            // No local digest (locally built image) — can't compare
             return Ok((false, local_id.clone(), local_id));
         }
 
-        // Re-inspect after pull
-        let updated = self.docker.inspect_image(image).await
-            .map_err(|e| e.to_string())?;
-        let updated_id = updated.id.unwrap_or_default();
-
-        Ok((local_id != updated_id, local_id, updated_id))
+        let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
+        Ok((outdated, local_digest, remote_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
@@ -575,4 +588,88 @@ impl DockerClient {
             environments: vec![],
         }
     }
+}
+
+/// Parse "registry/repo:tag" into (registry, repo, tag).
+/// Handles Docker Hub shorthand (e.g. "nginx:latest" → "registry-1.docker.io", "library/nginx", "latest")
+/// and third-party registries (e.g. "ghcr.io/user/repo:tag").
+fn parse_image_ref(image: &str) -> (String, String, String) {
+    let (name, tag) = if let Some((n, t)) = image.rsplit_once(':') {
+        // Check that the part after : is a tag, not a port
+        if t.contains('/') { (image, "latest") } else { (n, t) }
+    } else {
+        (image, "latest")
+    };
+
+    let parts: Vec<&str> = name.splitn(2, '/').collect();
+    if parts.len() == 1 {
+        // "nginx" → Docker Hub library
+        ("registry-1.docker.io".into(), format!("library/{}", parts[0]), tag.into())
+    } else if parts[0].contains('.') || parts[0].contains(':') {
+        // "ghcr.io/user/repo" or "registry.example.com:5000/repo"
+        let registry = parts[0].to_string();
+        let repo = parts[1].to_string();
+        (registry, repo, tag.into())
+    } else {
+        // "user/repo" → Docker Hub
+        ("registry-1.docker.io".into(), name.to_string(), tag.into())
+    }
+}
+
+/// Fetch the digest of an image tag from a container registry WITHOUT pulling.
+/// Uses the Docker Distribution HTTP API v2 (OCI).
+async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Step 1: Get auth token (most registries require this)
+    let token = get_registry_token(&client, registry, repo).await.unwrap_or_default();
+
+    // Step 2: HEAD request to manifests endpoint to get digest
+    let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
+    let mut req = client.head(&url)
+        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+        .header("Accept", "application/vnd.oci.image.index.v1+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
+
+    if !token.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Registry returned {}", resp.status()));
+    }
+
+    // Digest is in Docker-Content-Digest header
+    resp.headers()
+        .get("docker-content-digest")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No digest in response".into())
+}
+
+/// Get a bearer token for the registry (Docker Hub, GHCR, etc.)
+async fn get_registry_token(client: &reqwest::Client, registry: &str, repo: &str) -> Result<String, String> {
+    // Docker Hub
+    if registry.contains("docker.io") || registry.contains("registry-1") {
+        let url = format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull", repo);
+        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        return Ok(data["token"].as_str().unwrap_or("").to_string());
+    }
+
+    // GHCR (GitHub Container Registry)
+    if registry.contains("ghcr.io") {
+        let url = format!("https://ghcr.io/token?service=ghcr.io&scope=repository:{}:pull", repo);
+        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        return Ok(data["token"].as_str().unwrap_or("").to_string());
+    }
+
+    // Other registries — try anonymous
+    Ok(String::new())
 }
