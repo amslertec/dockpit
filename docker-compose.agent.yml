@@ -1,0 +1,17 @@
+# DockPit Agent - Deploy this on any remote Docker host.
+# No configuration needed! Just start it and connect from the DockPit UI.
+services:
+  dockpit-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: dockpit-agent
+    restart: unless-stopped
+    ports:
+      - "5522:5522"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/docker/container:/stacks
+    environment:
+      - AGENT_PORT=5522
+      - AGENT_STACKS_DIR=/stacks

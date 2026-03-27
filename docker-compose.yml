@@ -1,0 +1,23 @@
+services:
+  dockpit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dockpit
+    restart: unless-stopped
+    ports:
+      - "5533:5533"
+      - "5539:5539"
+    volumes:
+      - dockpit_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/docker/container:/stacks
+    environment:
+      - DOCKPIT_PORT=5533
+      - DOCKPIT_JWT_SECRET=zcH5of5cdG2GNWr2QEudGGXaezgh6nek
+      - DOCKPIT_STACKS_DIR=/stacks
+      - DOCKPIT_HTTPS_PORT=5539
+
+volumes:
+  dockpit_data:
+    driver: local

@@ -1,0 +1,216 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ============================================
+   DockPit — Futuristic Design System v2
+   ============================================ */
+
+:root {
+  /* Backgrounds — deep space dark with blue undertone */
+  --bg-0: #05070e;
+  --bg-1: #0a0e1a;
+  --bg-2: #101627;
+  --bg-3: #161d32;
+  --bg-hover: #1c2540;
+
+  /* Borders — subtle luminous edges */
+  --border: rgba(99, 130, 255, 0.12);
+  --border-light: rgba(99, 130, 255, 0.22);
+
+  /* Text — crisp whites */
+  --text: #edf0ff;
+  --text-secondary: #8b95b8;
+  --text-muted: #4e5678;
+
+  /* Accent — electric cyan-blue gradient base */
+  --accent: #6c5ce7;
+  --accent-hover: #8577ed;
+  --accent-bg: rgba(108, 92, 231, 0.12);
+
+  /* Status Colors — vibrant neon */
+  --green: #00e88f;
+  --green-bg: rgba(0, 232, 143, 0.1);
+  --red: #ff5c75;
+  --red-bg: rgba(255, 92, 117, 0.1);
+  --yellow: #ffbe2e;
+  --yellow-bg: rgba(255, 190, 46, 0.1);
+  --purple: #bf8aff;
+  --purple-bg: rgba(191, 138, 255, 0.1);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(10, 14, 26, 0.92);
+  --glass-border: rgba(99, 130, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.03);
+
+  /* Dropdown (fully opaque for readability) */
+  --dropdown-bg: #121830;
+
+  /* Shadows — with colored glow */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 30px rgba(108, 92, 231, 0.2), 0 0 60px rgba(108, 92, 231, 0.05);
+  --shadow-glow-green: 0 0 20px rgba(0, 232, 143, 0.15);
+  --shadow-glow-red: 0 0 20px rgba(255, 92, 117, 0.15);
+
+  /* Radius — more rounded for modern feel */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Input */
+  --input-bg: rgba(10, 14, 26, 0.5);
+  --input-border: rgba(99, 130, 255, 0.15);
+  --input-focus: var(--accent);
+  --input-focus-ring: rgba(108, 92, 231, 0.2);
+
+  /* Gradient accents */
+  --gradient-primary: linear-gradient(135deg, #6c5ce7 0%, #00b4d8 100%);
+  --gradient-success: linear-gradient(135deg, #00e88f 0%, #00b4d8 100%);
+  --gradient-danger: linear-gradient(135deg, #ff5c75 0%, #ff8a5c 100%);
+  --gradient-card: linear-gradient(180deg, rgba(99, 130, 255, 0.04) 0%, transparent 100%);
+}
+
+.light {
+  /* Backgrounds — clean, airy whites */
+  --bg-0: #f0f2f8;
+  --bg-1: #ffffff;
+  --bg-2: #f6f7fc;
+  --bg-3: #eceef6;
+  --bg-hover: #e4e6f0;
+
+  /* Borders */
+  --border: rgba(108, 92, 231, 0.12);
+  --border-light: rgba(108, 92, 231, 0.2);
+
+  /* Text */
+  --text: #1a1d2e;
+  --text-secondary: #5a6180;
+  --text-muted: #9098b3;
+
+  /* Accent */
+  --accent: #5b4cdb;
+  --accent-hover: #4a3bc8;
+  --accent-bg: rgba(91, 76, 219, 0.08);
+
+  /* Status Colors */
+  --green: #00c77a;
+  --green-bg: rgba(0, 199, 122, 0.08);
+  --red: #e8435a;
+  --red-bg: rgba(232, 67, 90, 0.08);
+  --yellow: #e6a800;
+  --yellow-bg: rgba(230, 168, 0, 0.08);
+  --purple: #8b5cf6;
+  --purple-bg: rgba(139, 92, 246, 0.08);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(108, 92, 231, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.8);
+
+  /* Dropdown */
+  --dropdown-bg: #ffffff;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(108, 92, 231, 0.06);
+  --shadow-md: 0 4px 20px rgba(108, 92, 231, 0.08);
+  --shadow-lg: 0 8px 40px rgba(108, 92, 231, 0.1);
+  --shadow-glow: 0 0 30px rgba(108, 92, 231, 0.08);
+  --shadow-glow-green: 0 0 20px rgba(0, 199, 122, 0.1);
+  --shadow-glow-red: 0 0 20px rgba(232, 67, 90, 0.1);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Input */
+  --input-bg: rgba(255, 255, 255, 0.8);
+  --input-border: rgba(108, 92, 231, 0.15);
+  --input-focus: var(--accent);
+  --input-focus-ring: rgba(91, 76, 219, 0.12);
+
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #5b4cdb 0%, #0096c7 100%);
+  --gradient-success: linear-gradient(135deg, #00c77a 0%, #0096c7 100%);
+  --gradient-danger: linear-gradient(135deg, #e8435a 0%, #ff8a5c 100%);
+  --gradient-card: linear-gradient(180deg, rgba(108, 92, 231, 0.03) 0%, transparent 100%);
+}
+
+/* === Base === */
+html {
+  background: var(--bg-0);
+  color: var(--text);
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* === Selection === */
+::selection {
+  background: rgba(108, 92, 231, 0.3);
+  color: white;
+}
+
+/* === Mobile Touch === */
+@media (hover: none) {
+  button, a, [role="button"], [role="checkbox"], [role="option"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* === Scrollbar — sleek minimal === */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(108, 92, 231, 0.2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(108, 92, 231, 0.4); }
+
+/* === Custom utilities === */
+@utility bg-0 { background-color: var(--bg-0); }
+@utility bg-1 { background-color: var(--bg-1); }
+@utility bg-2 { background-color: var(--bg-2); }
+@utility bg-3 { background-color: var(--bg-3); }
+@utility bg-hover { background-color: var(--bg-hover); }
+@utility border-theme { border-color: var(--border); }
+@utility border-light { border-color: var(--border-light); }
+@utility text-primary { color: var(--text); }
+@utility text-secondary { color: var(--text-secondary); }
+@utility text-muted { color: var(--text-muted); }
+@utility text-accent { color: var(--accent); }
+@utility bg-accent { background-color: var(--accent); }
+@utility bg-accent-hover { background-color: var(--accent-hover); }
+@utility bg-accent-light { background-color: var(--accent-bg); }
+@utility text-green { color: var(--green); }
+@utility bg-green-light { background-color: var(--green-bg); }
+@utility text-red { color: var(--red); }
+@utility bg-red-light { background-color: var(--red-bg); }
+@utility text-yellow { color: var(--yellow); }
+@utility bg-yellow-light { background-color: var(--yellow-bg); }
+@utility text-purple { color: var(--purple); }
+@utility bg-purple-light { background-color: var(--purple-bg); }
+@utility bg-glass { background-color: var(--glass-bg); }
+@utility border-glass { border-color: var(--glass-border); }
+@utility shadow-theme-sm { box-shadow: var(--shadow-sm); }
+@utility shadow-theme-md { box-shadow: var(--shadow-md); }
+@utility shadow-theme-lg { box-shadow: var(--shadow-lg); }
+@utility shadow-glow { box-shadow: var(--shadow-glow); }
+@utility radius-sm { border-radius: var(--radius-sm); }
+@utility radius-md { border-radius: var(--radius-md); }
+@utility radius-lg { border-radius: var(--radius-lg); }
+@utility radius-xl { border-radius: var(--radius-xl); }
+@utility bg-dropdown { background-color: var(--dropdown-bg); }
+@utility bg-card {
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}

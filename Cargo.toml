@@ -1,0 +1,48 @@
+[package]
+name = "dockpit"
+version = "0.1.0"
+edition = "2021"
+description = "A modern Docker container management tool with remote agent support"
+
+[[bin]]
+name = "dockpit-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "dockpit-agent"
+path = "src/bin/agent.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros", "ws"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tokio = { version = "1", features = ["full"] }
+bollard = "0.18"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jsonwebtoken = "9"
+bcrypt = "0.16"
+rust-embed = { version = "8", features = ["compression"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower = "0.5"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mime_guess = "2"
+reqwest = { version = "0.12", features = ["json"] }
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+hostname = "0.4"
+futures-lite = "2"
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.24", features = ["connect"] }
+urlencoding = "2"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rcgen = "0.13"
+rustls = "0.23"
+rustls-pemfile = "2"
+totp-rs = { version = "5", features = ["qr", "gen_secret"] }
+base32 = "0.5"
+serde_yaml = "0.9"

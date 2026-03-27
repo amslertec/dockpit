@@ -1,0 +1,33 @@
+# === Rust ===
+/target/
+Cargo.lock
+
+# === Node / Frontend ===
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+frontend/.vite/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === Environment / Secrets ===
+.env
+.env.*
+!.env.example
+
+# === Docker ===
+dockpit_data/
+
+# === OS ===
+*.log
+*.pid
+
+# === Claude Code ===
+.claude/

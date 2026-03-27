@@ -1,0 +1,10 @@
+{
+  "name": "DockPit",
+  "short_name": "DockPit",
+  "description": "Docker Container Management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080a0f",
+  "theme_color": "#4f8cff",
+  "icons": [{ "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

@@ -1,0 +1,59 @@
+## DockPit Agent - Multi-stage build
+FROM docker.io/library/rust:bookworm AS builder
+
+WORKDIR /app
+COPY Cargo.toml ./
+COPY src/ ./src/
+COPY frontend/ ./frontend/
+
+RUN cargo build --release --bin dockpit-agent
+
+## Docker CLI + patched Compose
+FROM docker.io/library/golang:1.25-alpine AS compose-builder
+ARG COMPOSE_VERSION=v5.1.1
+RUN apk add --no-cache git curl \
+    && git clone --depth 1 --branch ${COMPOSE_VERSION} https://github.com/docker/compose.git /src
+WORKDIR /src
+ENV GOTOOLCHAIN=auto
+RUN go get google.golang.org/grpc@v1.79.3 \
+    && go get go.opentelemetry.io/otel/sdk@v1.40.0 \
+    && go get go.opentelemetry.io/otel@v1.40.0 \
+    && go get go.opentelemetry.io/otel/trace@v1.40.0 \
+    && go get go.opentelemetry.io/otel/metric@v1.40.0 \
+    && go get github.com/sigstore/sigstore@v1.10.4 \
+    && go mod tidy
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/docker-compose ./cmd
+
+FROM docker.io/library/alpine:3.21 AS docker-bins
+ARG DOCKER_VERSION=29.3.1
+RUN apk add --no-cache curl \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" | tar xz --strip-components=1 -C /usr/local/bin docker/docker
+COPY --from=compose-builder /usr/local/bin/docker-compose /usr/local/bin/docker-compose
+
+## Runtime
+FROM docker.io/library/debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="DockPit Agent" \
+      org.opencontainers.image.description="Remote agent for DockPit container management" \
+      org.opencontainers.image.vendor="amslertec" \
+      org.opencontainers.image.source="https://github.com/amslertec/dockpit" \
+      org.opencontainers.image.licenses="MIT"
+
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=docker-bins /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
+RUN mkdir -p /usr/libexec/docker/cli-plugins /root/.docker
+
+COPY --from=builder /app/target/release/dockpit-agent /usr/local/bin/dockpit-agent
+
+ENV AGENT_PORT=5522
+
+EXPOSE 5522
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -sf http://localhost:5522/health || exit 1
+
+CMD ["dockpit-agent"]

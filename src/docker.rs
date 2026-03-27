@@ -1,0 +1,516 @@
+use bollard::Docker;
+use bollard::container::{ListContainersOptions, LogsOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions};
+use bollard::image::{ListImagesOptions, RemoveImageOptions};
+use bollard::volume::ListVolumesOptions;
+use bollard::network::ListNetworksOptions;
+use futures_lite::StreamExt;
+use std::collections::HashMap;
+
+use crate::models::*;
+
+pub struct DockerClient {
+    docker: Docker,
+}
+
+impl DockerClient {
+    pub fn clone_inner(&self) -> Docker {
+        self.docker.clone()
+    }
+
+    pub fn from_docker(docker: Docker) -> Self {
+        Self { docker }
+    }
+
+    pub fn new() -> Result<Self, bollard::errors::Error> {
+        let docker = Docker::connect_with_socket_defaults()?;
+        Ok(Self { docker })
+    }
+
+    pub async fn list_containers(&self) -> Result<Vec<ContainerInfo>, bollard::errors::Error> {
+        let mut filters = HashMap::new();
+        filters.insert("status", vec!["running", "exited", "paused", "created", "restarting", "dead"]);
+
+        let options = ListContainersOptions {
+            all: true,
+            filters,
+            ..Default::default()
+        };
+
+        let containers = self.docker.list_containers(Some(options)).await?;
+
+        Ok(containers
+            .into_iter()
+            .map(|c| {
+                let name = c.names
+                    .as_ref()
+                    .and_then(|n| n.first())
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+
+                let ports = c.ports
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|p| PortMapping {
+                        private_port: p.private_port,
+                        public_port: p.public_port,
+                        port_type: p.typ.map(|t| format!("{:?}", t)).unwrap_or_else(|| "tcp".to_string()),
+                    })
+                    .collect();
+
+                // Extract IP from first network
+                let ip_address = c.network_settings
+                    .as_ref()
+                    .and_then(|ns| ns.networks.as_ref())
+                    .and_then(|nets| nets.values().next())
+                    .and_then(|net| net.ip_address.clone())
+                    .filter(|ip| !ip.is_empty());
+
+                // Extract stack name from compose label
+                let stack_name = c.labels
+                    .as_ref()
+                    .and_then(|l| l.get("com.docker.compose.project"))
+                    .cloned();
+
+                ContainerInfo {
+                    id: c.id.unwrap_or_default(),
+                    name,
+                    image: c.image.unwrap_or_default(),
+                    state: c.state.unwrap_or_default(),
+                    status: c.status.unwrap_or_default(),
+                    ports,
+                    created: c.created.unwrap_or(0),
+                    environment_id: None,
+                    ip_address,
+                    stack_name,
+                }
+            })
+            .collect())
+    }
+
+    pub async fn start_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.docker.start_container(id, None::<StartContainerOptions<String>>).await
+    }
+
+    pub async fn stop_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.docker
+            .stop_container(id, Some(StopContainerOptions { t: 10 }))
+            .await
+    }
+
+    pub async fn restart_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.docker.restart_container(id, Some(bollard::container::RestartContainerOptions { t: 10 })).await
+    }
+
+    pub async fn remove_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.docker
+            .remove_container(
+                id,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+    }
+
+    pub async fn inspect_container(&self, id: &str) -> Result<bollard::models::ContainerInspectResponse, bollard::errors::Error> {
+        self.docker.inspect_container(id, None).await
+    }
+
+    pub async fn inspect_image(&self, name: &str) -> Result<bollard::models::ImageInspect, bollard::errors::Error> {
+        self.docker.inspect_image(name).await
+    }
+
+    /// Check if image has update available by comparing local digest with registry.
+    /// Returns (outdated: bool, local_id, remote_digest)
+    pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
+        // Get local image ID
+        let local = self.docker.inspect_image(image).await
+            .map_err(|e| format!("Image nicht gefunden: {}", e))?;
+        let local_id = local.id.unwrap_or_default();
+        let _local_digests = local.repo_digests.unwrap_or_default();
+
+        // Try pulling to check for updates (registry inspect not always available)
+        if let Err(_) = self.pull_image(image).await {
+            // Pull failed (private registry, no auth, etc.) - assume up to date
+            return Ok((false, local_id.clone(), local_id));
+        }
+
+        // Re-inspect after pull
+        let updated = self.docker.inspect_image(image).await
+            .map_err(|e| e.to_string())?;
+        let updated_id = updated.id.unwrap_or_default();
+
+        Ok((local_id != updated_id, local_id, updated_id))
+    }
+
+    /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
+    pub async fn recreate_container(&self, id: &str) -> Result<String, String> {
+        use bollard::container::CreateContainerOptions;
+
+        // 1. Inspect
+        let inspect = self.docker.inspect_container(id, None).await
+            .map_err(|e| format!("Inspect: {}", e))?;
+        let config = inspect.config.ok_or("Keine Config")?;
+        let image = config.image.clone().unwrap_or_default();
+        let name = inspect.name.unwrap_or_default().trim_start_matches('/').to_string();
+        let host_config = inspect.host_config;
+
+        // 2. Pull latest image
+        self.pull_image(&image).await.map_err(|e| format!("Pull: {}", e))?;
+
+        // 3. Stop and remove old container
+        let _ = self.docker.stop_container(id, Some(bollard::container::StopContainerOptions { t: 10 })).await;
+        self.docker.remove_container(id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await
+            .map_err(|e| format!("Remove: {}", e))?;
+
+        // 4. Create new container with same config
+        let create_opts = CreateContainerOptions { name: name.clone(), ..Default::default() };
+        let networking_config = inspect.network_settings
+            .and_then(|ns| ns.networks)
+            .map(|nets| {
+                let endpoints: HashMap<String, bollard::models::EndpointSettings> = nets.into_iter().map(|(k, v)| {
+                    (k, bollard::models::EndpointSettings {
+                        aliases: v.aliases,
+                        network_id: v.network_id,
+                        ..Default::default()
+                    })
+                }).collect();
+                bollard::container::NetworkingConfig { endpoints_config: endpoints }
+            });
+
+        let body = bollard::container::Config {
+            image: Some(image.clone()),
+            hostname: config.hostname,
+            domainname: config.domainname,
+            user: config.user,
+            env: config.env,
+            cmd: config.cmd,
+            entrypoint: config.entrypoint,
+            working_dir: config.working_dir,
+            labels: config.labels,
+            exposed_ports: config.exposed_ports,
+            volumes: config.volumes,
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            stop_signal: config.stop_signal,
+            healthcheck: config.healthcheck,
+            host_config: host_config,
+            networking_config,
+            ..Default::default()
+        };
+
+        let created = self.docker.create_container(Some(create_opts), body).await
+            .map_err(|e| format!("Create: {}", e))?;
+
+        // 5. Start
+        self.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
+            .map_err(|e| format!("Start: {}", e))?;
+
+        Ok(format!("Container '{}' neu erstellt mit aktuellem Image", name))
+    }
+
+    pub async fn create_exec(
+        &self,
+        container_id: &str,
+        cmd: Vec<&str>,
+        user: Option<&str>,
+    ) -> Result<String, bollard::errors::Error> {
+        use bollard::exec::CreateExecOptions;
+        let options = CreateExecOptions {
+            attach_stdin: Some(true),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            tty: Some(true),
+            cmd: Some(cmd),
+            user,
+            ..Default::default()
+        };
+        let exec = self.docker.create_exec(container_id, options).await?;
+        Ok(exec.id)
+    }
+
+    pub async fn start_exec(
+        &self,
+        exec_id: &str,
+    ) -> Result<bollard::exec::StartExecResults, bollard::errors::Error> {
+        use bollard::exec::StartExecOptions;
+        self.docker.start_exec(exec_id, Some(StartExecOptions { detach: false, tty: true, ..Default::default() })).await
+    }
+
+    pub async fn resize_exec(
+        &self,
+        exec_id: &str,
+        width: u16,
+        height: u16,
+    ) -> Result<(), bollard::errors::Error> {
+        use bollard::exec::ResizeExecOptions;
+        self.docker.resize_exec(exec_id, ResizeExecOptions { width, height }).await
+    }
+
+    pub async fn container_logs(&self, id: &str, tail: usize) -> Result<String, bollard::errors::Error> {
+        let options = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            tail: tail.to_string(),
+            timestamps: true,
+            ..Default::default()
+        };
+
+        let mut stream = self.docker.logs(id, Some(options));
+        let mut logs = String::new();
+
+        while let Some(Ok(log)) = stream.next().await {
+            logs.push_str(&log.to_string());
+        }
+
+        Ok(logs)
+    }
+
+    pub async fn list_images(&self) -> Result<Vec<ImageInfo>, bollard::errors::Error> {
+        let options = ListImagesOptions::<String> {
+            all: false,
+            ..Default::default()
+        };
+
+        let images = self.docker.list_images(Some(options)).await?;
+
+        // Get all image IDs used by containers
+        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+            all: true, ..Default::default()
+        })).await.unwrap_or_default();
+
+        let used_ids: std::collections::HashSet<String> = containers.iter()
+            .filter_map(|c| c.image_id.clone())
+            .collect();
+
+        Ok(images
+            .into_iter()
+            .map(|img| {
+                let tags = img.repo_tags;
+                let size_mb = img.size as f64 / 1_000_000.0;
+                let in_use = used_ids.contains(&img.id);
+
+                ImageInfo {
+                    id: img.id[..std::cmp::min(19, img.id.len())].to_string(),
+                    tags,
+                    size: size_mb,
+                    created: img.created,
+                    in_use,
+                }
+            })
+            .collect())
+    }
+
+    pub async fn pull_image(&self, image: &str) -> Result<(), bollard::errors::Error> {
+        use bollard::image::CreateImageOptions;
+
+        let (repo, tag) = if let Some((r, t)) = image.split_once(':') {
+            (r.to_string(), t.to_string())
+        } else {
+            (image.to_string(), "latest".to_string())
+        };
+
+        let options = CreateImageOptions {
+            from_image: repo,
+            tag,
+            ..Default::default()
+        };
+
+        let mut stream = self.docker.create_image(Some(options), None, None);
+        while let Some(result) = stream.next().await {
+            result?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn prune_images(&self) -> Result<String, bollard::errors::Error> {
+        let result = self.docker.prune_images::<String>(None).await?;
+        let deleted = result.images_deleted.map(|v| v.len()).unwrap_or(0);
+        let space = result.space_reclaimed.unwrap_or(0);
+        Ok(format!("{} Images gelöscht, {:.1} MB freigegeben", deleted, space as f64 / 1_000_000.0))
+    }
+
+    pub async fn remove_image(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.remove_image_force(id, true).await
+    }
+
+    pub async fn remove_image_force(&self, id: &str, force: bool) -> Result<(), bollard::errors::Error> {
+        self.docker
+            .remove_image(
+                id,
+                Some(RemoveImageOptions {
+                    force,
+                    ..Default::default()
+                }),
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn list_volumes(&self) -> Result<Vec<VolumeInfo>, bollard::errors::Error> {
+        let result = self.docker.list_volumes(Some(ListVolumesOptions::<String> {
+            ..Default::default()
+        })).await?;
+
+        // Get volumes in use by containers
+        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+            all: true, ..Default::default()
+        })).await.unwrap_or_default();
+
+        let used_volumes: std::collections::HashSet<String> = containers.iter()
+            .filter_map(|c| c.mounts.as_ref())
+            .flat_map(|mounts| mounts.iter())
+            .filter_map(|m| m.name.clone())
+            .collect();
+
+        Ok(result
+            .volumes
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| {
+                let in_use = used_volumes.contains(&v.name);
+                VolumeInfo {
+                    name: v.name,
+                    driver: v.driver,
+                    mountpoint: v.mountpoint,
+                    created: v.created_at,
+                    in_use,
+                }
+            })
+            .collect())
+    }
+
+    pub async fn remove_volume(&self, name: &str, force: bool) -> Result<(), bollard::errors::Error> {
+        use bollard::volume::RemoveVolumeOptions;
+        self.docker.remove_volume(name, Some(RemoveVolumeOptions { force })).await
+    }
+
+    pub async fn prune_volumes(&self) -> Result<String, bollard::errors::Error> {
+        let result = self.docker.prune_volumes::<String>(None).await?;
+        let deleted = result.volumes_deleted.map(|v| v.len()).unwrap_or(0);
+        let space = result.space_reclaimed.unwrap_or(0);
+        Ok(format!("{} Volumes gelöscht, {:.1} MB freigegeben", deleted, space as f64 / 1_000_000.0))
+    }
+
+    pub async fn list_networks(&self) -> Result<Vec<NetworkInfo>, bollard::errors::Error> {
+        let networks = self.docker.list_networks(Some(ListNetworksOptions::<String> {
+            ..Default::default()
+        })).await?;
+
+        // Get used network IDs from containers
+        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+            all: true, ..Default::default()
+        })).await.unwrap_or_default();
+
+        let mut network_usage: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for c in &containers {
+            if let Some(ns) = c.network_settings.as_ref().and_then(|s| s.networks.as_ref()) {
+                for (net_name, _) in ns {
+                    *network_usage.entry(net_name.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        Ok(networks
+            .into_iter()
+            .map(|n| {
+                let name = n.name.unwrap_or_default();
+                let containers_count = network_usage.get(&name).copied().unwrap_or(0);
+                NetworkInfo {
+                    id: n.id.unwrap_or_default(),
+                    name,
+                    driver: n.driver.unwrap_or_default(),
+                    scope: n.scope.unwrap_or_default(),
+                    in_use: containers_count > 0,
+                    containers_count,
+                }
+            })
+            .collect())
+    }
+
+    pub async fn remove_network(&self, id: &str) -> Result<(), bollard::errors::Error> {
+        self.docker.remove_network(id).await
+    }
+
+    pub async fn prune_networks(&self) -> Result<String, bollard::errors::Error> {
+        let result = self.docker.prune_networks::<String>(None).await?;
+        let deleted = result.networks_deleted.map(|v| v.len()).unwrap_or(0);
+        Ok(format!("{} Netzwerke gelöscht", deleted))
+    }
+
+    pub async fn get_disk_usage(&self) -> DiskUsageInfo {
+        let df = self.docker.df().await;
+        match df {
+            Ok(d) => {
+                let imgs = d.images.as_ref().map(|v| v.iter().map(|i| i.size).sum::<i64>()).unwrap_or(0);
+                let ctrs = d.containers.as_ref().map(|v| v.iter().map(|c| c.size_rw.unwrap_or(0)).sum::<i64>()).unwrap_or(0);
+                let vols = d.volumes.as_ref().map(|v| v.iter().map(|vol| vol.usage_data.as_ref().map(|u| u.size).unwrap_or(0)).sum::<i64>()).unwrap_or(0);
+                let cache = d.build_cache.as_ref().map(|v| v.iter().filter_map(|b| b.size).sum::<i64>()).unwrap_or(0);
+                let to_mb = |b: i64| b as f64 / 1_000_000.0;
+                DiskUsageInfo {
+                    images_size: to_mb(imgs),
+                    containers_size: to_mb(ctrs),
+                    volumes_size: to_mb(vols),
+                    build_cache_size: to_mb(cache),
+                    total_size: to_mb(imgs + ctrs + vols + cache),
+                }
+            }
+            Err(_) => DiskUsageInfo { images_size: 0.0, containers_size: 0.0, volumes_size: 0.0, build_cache_size: 0.0, total_size: 0.0 },
+        }
+    }
+
+    pub async fn get_system_info(&self) -> SystemInfo {
+        let info = self.docker.info().await.ok();
+        let version = self.docker.version().await.ok();
+        let volumes = self.list_volumes().await.unwrap_or_default();
+        let networks = self.list_networks().await.unwrap_or_default();
+
+        let mem_bytes = info.as_ref().and_then(|i| i.mem_total).unwrap_or(0);
+        let mem_gb = mem_bytes as f64 / 1_073_741_824.0;
+
+        SystemInfo {
+            hostname: info.as_ref().and_then(|i| i.name.clone()).unwrap_or_else(|| "unknown".into()),
+            docker_version: version.and_then(|v| v.version).unwrap_or_else(|| "unknown".into()),
+            os: info.as_ref().and_then(|i| i.operating_system.clone()).unwrap_or_default(),
+            cpus: info.as_ref().and_then(|i| i.ncpu).unwrap_or(0),
+            memory_bytes: mem_bytes,
+            memory_display: format!("{:.1} GB", mem_gb),
+            containers_running: info.as_ref().and_then(|i| i.containers_running).unwrap_or(0),
+            containers_stopped: info.as_ref().and_then(|i| i.containers_stopped).unwrap_or(0),
+            containers_paused: info.as_ref().and_then(|i| i.containers_paused).unwrap_or(0),
+            containers_total: info.as_ref().and_then(|i| i.containers).unwrap_or(0),
+            images: info.as_ref().and_then(|i| i.images).unwrap_or(0),
+            volumes: volumes.len(),
+            networks: networks.len(),
+            status: "online".into(),
+            server_type: "Standalone".into(),
+        }
+    }
+
+    pub async fn get_dashboard_stats(&self) -> DashboardStats {
+        let containers = self.list_containers().await.unwrap_or_default();
+        let images = self.list_images().await.unwrap_or_default();
+        let volumes = self.list_volumes().await.unwrap_or_default();
+        let networks = self.list_networks().await.unwrap_or_default();
+
+        let running = containers.iter().filter(|c| c.state == "running").count();
+        let stopped = containers.iter().filter(|c| c.state != "running").count();
+
+        DashboardStats {
+            containers_running: running,
+            containers_stopped: stopped,
+            containers_total: containers.len(),
+            images_total: images.len(),
+            volumes_total: volumes.len(),
+            networks_total: networks.len(),
+            environments: vec![],
+        }
+    }
+}
