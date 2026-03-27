@@ -23,6 +23,7 @@ docker-compose*.yml
 docker-compose*.yaml
 Dockerfile.agent
 docker-push*.sh
+dockerhub_readme.md
 .dockerignore
 
 # IDE / OS

@@ -26,6 +26,7 @@ docker-compose.agent.yml
 docker-push.sh
 docker-push-server.sh
 docker-push-agent.sh
+dockerhub_readme.md
 
 # === Docker ===
 dockpit_data/
