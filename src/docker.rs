@@ -121,40 +121,38 @@ impl DockerClient {
         self.docker.inspect_image(name).await
     }
 
-    /// Check if image has update available by comparing local repo digest with registry digest.
-    /// Uses Docker Distribution API (no pull needed — fast, only a few KB).
-    /// Returns (outdated: bool, local_digest, remote_digest)
+    /// Check if image has update available by comparing local image ID with the
+    /// remote image config digest from the registry. No image pull needed.
+    /// Returns (outdated: bool, local_id, remote_config_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
         let local = self.docker.inspect_image(image).await
             .map_err(|e| format!("Image not found: {}", e))?;
-        let local_id = local.id.clone().unwrap_or_default();
+        let local_id = local.id.clone().unwrap_or_default(); // sha256:... (config digest)
         let local_digests = local.repo_digests.unwrap_or_default();
 
-        // Parse image name → registry, repo, tag
+        if local_digests.is_empty() {
+            // Locally built image — no registry to compare against
+            return Ok((false, local_id.clone(), local_id));
+        }
+
         let (registry, repo, tag) = parse_image_ref(image);
 
-        // Get local repo digest (sha256:...)
-        let local_digest = local_digests.iter()
-            .find(|d| d.contains('@'))
-            .map(|d| d.split('@').nth(1).unwrap_or("").to_string())
-            .unwrap_or_default();
-
-        // Query registry for remote digest (no pull!)
-        let remote_digest = match fetch_registry_digest(&registry, &repo, &tag).await {
+        // Fetch remote config digest from registry (resolves manifest list → platform manifest → config)
+        let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag).await {
             Ok(d) => d,
-            Err(_) => {
-                // Registry query failed — fall back to local_id comparison
+            Err(e) => {
+                tracing::warn!("Registry check failed for {}: {}", image, e);
                 return Ok((false, local_id.clone(), local_id));
             }
         };
 
-        if local_digest.is_empty() {
-            // No local digest (locally built image) — can't compare
-            return Ok((false, local_id.clone(), local_id));
-        }
+        // Compare local image ID (config digest) with remote config digest
+        // Both are in format "sha256:..."
+        let local_clean = local_id.trim_start_matches("sha256:").to_string();
+        let remote_clean = remote_config_digest.trim_start_matches("sha256:").to_string();
 
-        let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
-        Ok((outdated, local_digest, remote_digest))
+        let outdated = !remote_clean.is_empty() && local_clean != remote_clean;
+        Ok((outdated, local_id, remote_config_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
@@ -616,22 +614,101 @@ fn parse_image_ref(image: &str) -> (String, String, String) {
     }
 }
 
+/// Fetch the CONFIG digest of a remote image. This resolves:
+/// 1. Tag → OCI Index / Manifest List
+/// 2. Find linux/amd64 manifest
+/// 3. Fetch that manifest → extract config.digest
+/// The config digest IS the image ID that Docker uses locally.
+async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build().map_err(|e| e.to_string())?;
+
+    let token = get_registry_token(&client, registry, repo, true).await
+        .or_else(|_| futures_lite::future::block_on(get_registry_token(&client, registry, repo, false)))
+        .unwrap_or_default();
+
+    let auth_header = if !token.is_empty() { format!("Bearer {}", token) } else { String::new() };
+
+    // Step 1: GET manifest list / OCI index
+    let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
+    let mut req = client.get(&url)
+        .header("Accept", "application/vnd.oci.image.index.v1+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+        .header("Accept", "application/vnd.oci.image.manifest.v1+json");
+    if !auth_header.is_empty() {
+        req = req.header("Authorization", &auth_header);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Registry returned {} for {}", resp.status(), url));
+    }
+
+    let content_type = resp.headers().get("content-type")
+        .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    // If it's a manifest list / OCI index → find the amd64 manifest
+    if content_type.contains("manifest.list") || content_type.contains("image.index") {
+        let manifests = body["manifests"].as_array()
+            .ok_or("No manifests in index")?;
+
+        // Find linux/amd64 image manifest (skip attestations)
+        let amd64 = manifests.iter().find(|m| {
+            let platform = &m["platform"];
+            let arch = platform["architecture"].as_str().unwrap_or("");
+            let os = platform["os"].as_str().unwrap_or("");
+            let media_type = m["mediaType"].as_str().unwrap_or("");
+            arch == "amd64" && os == "linux" && !media_type.contains("attestation")
+        }).ok_or("No linux/amd64 manifest found")?;
+
+        let manifest_digest = amd64["digest"].as_str().ok_or("No digest in manifest entry")?;
+
+        // Step 2: Fetch the platform-specific manifest
+        let manifest_url = format!("https://{}/v2/{}/manifests/{}", registry, repo, manifest_digest);
+        let mut req = client.get(&manifest_url)
+            .header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json");
+        if !auth_header.is_empty() {
+            req = req.header("Authorization", &auth_header);
+        }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("Registry returned {} for manifest", resp.status()));
+        }
+        let manifest: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+        // The config digest IS the image ID
+        manifest["config"]["digest"].as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "No config digest in manifest".into())
+    } else {
+        // Already a single manifest — extract config digest directly
+        body["config"]["digest"].as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "No config digest in manifest".into())
+    }
+}
+
 /// Fetch the digest of an image tag from a container registry WITHOUT pulling.
-/// Uses the Docker Distribution HTTP API v2 (OCI).
+/// Uses Docker Distribution HTTP API v2. Supports authenticated registries
+/// by reading credentials from Docker config (~/.docker/config.json).
 async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
 
-    // Step 1: Get auth token (most registries require this)
-    let token = get_registry_token(&client, registry, repo).await.unwrap_or_default();
+    // Try authenticated first, fall back to anonymous
+    let token = get_registry_token(&client, registry, repo, true).await
+        .or_else(|_| futures_lite::future::block_on(get_registry_token(&client, registry, repo, false)))
+        .unwrap_or_default();
 
-    // Step 2: HEAD request to manifests endpoint to get digest
     let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
     let mut req = client.head(&url)
-        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
         .header("Accept", "application/vnd.oci.image.index.v1+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
         .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
 
     if !token.is_empty() {
@@ -640,11 +717,13 @@ async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
 
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Unauthorized — registry credentials may be missing".into());
+    }
     if !resp.status().is_success() {
         return Err(format!("Registry returned {}", resp.status()));
     }
 
-    // Digest is in Docker-Content-Digest header
     resp.headers()
         .get("docker-content-digest")
         .and_then(|v| v.to_str().ok())
@@ -652,24 +731,73 @@ async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<
         .ok_or_else(|| "No digest in response".into())
 }
 
-/// Get a bearer token for the registry (Docker Hub, GHCR, etc.)
-async fn get_registry_token(client: &reqwest::Client, registry: &str, repo: &str) -> Result<String, String> {
-    // Docker Hub
+/// Read Docker credentials from ~/.docker/config.json
+fn read_docker_credentials(registry: &str) -> Option<(String, String)> {
+    let config_path = dirs_next::home_dir()?.join(".docker/config.json");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    let auths = config.get("auths")?.as_object()?;
+
+    // Try exact match first, then partial match
+    let auth_entry = auths.get(registry)
+        .or_else(|| auths.get(&format!("https://{}", registry)))
+        .or_else(|| {
+            if registry.contains("docker.io") || registry.contains("registry-1") {
+                auths.get("https://index.docker.io/v1/")
+                    .or_else(|| auths.get("https://index.docker.io/v2/"))
+                    .or_else(|| auths.get("docker.io"))
+            } else {
+                None
+            }
+        })?;
+
+    let auth_b64 = auth_entry.get("auth")?.as_str()?;
+    let decoded = String::from_utf8(
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, auth_b64).ok()?
+    ).ok()?;
+
+    let (user, pass) = decoded.split_once(':')?;
+    Some((user.to_string(), pass.to_string()))
+}
+
+/// Get a bearer token for the registry. If `use_creds` is true, tries authenticated token.
+async fn get_registry_token(client: &reqwest::Client, registry: &str, repo: &str, use_creds: bool) -> Result<String, String> {
+    let creds = if use_creds { read_docker_credentials(registry) } else { None };
+
     if registry.contains("docker.io") || registry.contains("registry-1") {
         let url = format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull", repo);
-        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let mut req = client.get(&url);
+        if let Some((user, pass)) = &creds {
+            req = req.basic_auth(user, Some(pass));
+        }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
         let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        return Ok(data["token"].as_str().unwrap_or("").to_string());
+        let token = data["token"].as_str().unwrap_or("").to_string();
+        if token.is_empty() { return Err("No token".into()); }
+        return Ok(token);
     }
 
-    // GHCR (GitHub Container Registry)
     if registry.contains("ghcr.io") {
         let url = format!("https://ghcr.io/token?service=ghcr.io&scope=repository:{}:pull", repo);
-        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let mut req = client.get(&url);
+        if let Some((user, pass)) = &creds {
+            req = req.basic_auth(user, Some(pass));
+        }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
         let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        return Ok(data["token"].as_str().unwrap_or("").to_string());
+        let token = data["token"].as_str().unwrap_or("").to_string();
+        if token.is_empty() { return Err("No token".into()); }
+        return Ok(token);
     }
 
-    // Other registries — try anonymous
+    // Generic registry — try basic auth directly
+    if let Some((user, pass)) = creds {
+        return Ok(format!("Basic {}", base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            format!("{}:{}", user, pass)
+        )));
+    }
+
     Ok(String::new())
 }
