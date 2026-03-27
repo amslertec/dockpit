@@ -524,18 +524,69 @@ async fn recreate_container(
             }
         }
 
-        // Standalone: spawn a helper container to do the swap
+        // Standalone: spawn a helper container that will recreate us
+        // The helper mounts the Docker socket and runs: stop → rm → create → start
         let docker = state.docker.clone();
+        let name_clone = name.clone();
+        let image_clone = image.clone();
         let id_clone = id.clone();
+
+        // Collect the original container config for recreation
+        let env_vars = inspect.config.as_ref().and_then(|c| c.env.clone()).unwrap_or_default();
+        let ports = inspect.host_config.as_ref()
+            .and_then(|h| h.port_bindings.clone())
+            .map(|pb| pb.iter().map(|(k, v)| format!("-p {}:{}", v.as_ref().and_then(|v| v.first()).and_then(|b| b.host_port.as_ref()).unwrap_or(&"".to_string()), k.split('/').next().unwrap_or(""))).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let volumes = inspect.host_config.as_ref()
+            .and_then(|h| h.binds.clone())
+            .map(|b| b.iter().map(|v| format!("-v {}", v)).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let restart_policy = inspect.host_config.as_ref()
+            .and_then(|h| h.restart_policy.as_ref())
+            .and_then(|r| r.name.as_ref())
+            .map(|n| format!("--restart {}", n))
+            .unwrap_or_default();
+
+        let mut run_args = vec!["run".to_string(), "-d".to_string(), "--name".to_string(), name_clone.clone()];
+        for p in &ports { run_args.extend(p.split_whitespace().map(String::from)); }
+        for v in &volumes { run_args.extend(v.split_whitespace().map(String::from)); }
+        for e in &env_vars { run_args.push("-e".to_string()); run_args.push(e.clone()); }
+        if !restart_policy.is_empty() { run_args.extend(restart_policy.split_whitespace().map(String::from)); }
+        run_args.push(image_clone.clone());
+
+        let run_cmd = run_args.iter().map(|a| format!("'{}'", a.replace('\'', "'\\''"))).collect::<Vec<_>>().join(" ");
+        let helper_script = format!(
+            "sleep 3 && docker stop {} && docker rm -f {} && docker {} && echo 'Self-update complete'",
+            name_clone, name_clone, run_cmd
+        );
+
         tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            // Stop ourselves
-            let _ = docker.stop_container(&id_clone, Some(bollard::container::StopContainerOptions { t: 5 })).await;
-            // Note: after this point, this task will be killed as the container stops
+            // Launch a helper container that will swap us out
+            let _ = docker.create_container(
+                Some(bollard::container::CreateContainerOptions { name: format!("{}-updater", name_clone), ..Default::default() }),
+                bollard::container::Config {
+                    image: Some("docker:cli".to_string()),
+                    cmd: Some(vec!["sh".to_string(), "-c".to_string(), helper_script]),
+                    host_config: Some(bollard::models::HostConfig {
+                        binds: Some(vec!["/var/run/docker.sock:/var/run/docker.sock".to_string()]),
+                        auto_remove: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+            ).await.and_then(|c| {
+                let docker2 = docker.clone();
+                let cid = c.id;
+                tokio::spawn(async move {
+                    let _ = docker2.start_container(&cid, None::<bollard::container::StartContainerOptions<String>>).await;
+                });
+                Ok(())
+            });
         });
+
         return Ok(Json(ApiResponse::ok(format!(
-            "Self-update: Image pulled. Container '{}' will stop now. Please restart it manually with: docker start {}",
-            name, name
+            "Self-update initiated for '{}'. A helper container will recreate the agent in ~5 seconds.",
+            name
         ))));
     }
 
