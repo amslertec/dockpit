@@ -1743,6 +1743,186 @@ pub async fn remove_registry(
     }
 }
 
+// === Scheduled Jobs ===
+
+pub async fn list_scheduled_jobs(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<Vec<ScheduledJob>>> {
+    let env_id = query.get("env_id").map(|s| s.as_str());
+    Json(ApiResponse::ok(state.db.get_scheduled_jobs(env_id)))
+}
+
+pub async fn create_scheduled_job(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateJobRequest>,
+) -> Json<ApiResponse<ScheduledJob>> {
+    let job = ScheduledJob {
+        id: uuid::Uuid::new_v4().to_string(),
+        env_id: req.env_id,
+        job_type: req.job_type,
+        enabled: true,
+        interval_hours: req.interval_hours,
+        stack_name: req.stack_name,
+        last_run: None,
+        next_run: Some(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()),
+        last_result: None,
+        last_message: None,
+    };
+    match state.db.create_scheduled_job(&job) {
+        Ok(_) => Json(ApiResponse::ok(job)),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn update_scheduled_job(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateJobRequest>,
+) -> Json<ApiResponse<String>> {
+    match state.db.update_scheduled_job(&id, req.enabled, req.interval_hours) {
+        Ok(_) => Json(ApiResponse::ok("Updated".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn delete_scheduled_job(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_scheduled_job(&id) {
+        Ok(_) => Json(ApiResponse::ok("Deleted".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn run_scheduled_job(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    let jobs = state.db.get_scheduled_jobs(None);
+    let job = match jobs.iter().find(|j| j.id == id) {
+        Some(j) => j.clone(),
+        None => return Json(ApiResponse::err("Job not found")),
+    };
+    tokio::spawn(execute_job(state, job));
+    Json(ApiResponse::ok("Job started".into()))
+}
+
+pub async fn execute_job(state: Arc<AppState>, job: ScheduledJob) {
+    let env = match state.db.get_environment(&job.env_id) {
+        Some(e) => e,
+        None => {
+            state.db.update_job_result(&job.id, "error", "Environment not found", "").ok();
+            return;
+        }
+    };
+
+    let (result, message) = match job.job_type.as_str() {
+        "update_check" => {
+            // Reuse existing update check logic for this environment
+            let containers: Vec<crate::models::ContainerInfo> = if env.is_local {
+                state.docker.list_containers().await.unwrap_or_default()
+            } else {
+                let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
+                let url = format!("{}/api/containers", env.url);
+                match client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+                    Ok(resp) => resp.json::<ApiResponse<Vec<crate::models::ContainerInfo>>>().await
+                        .ok().and_then(|r| r.data).unwrap_or_default(),
+                    Err(_) => vec![],
+                }
+            };
+
+            let mut checked = 0;
+            let mut outdated = 0;
+            let creds: Vec<_> = state.db.get_all_registry_credentials()
+                .into_iter()
+                .map(|(r, u, p)| serde_json::json!({"registry": r, "username": u, "password": p}))
+                .collect();
+
+            for c in &containers {
+                if c.state != "running" { continue; }
+                checked += 1;
+                let check_result = if env.is_local {
+                    state.docker.check_image_update(&c.image).await.ok()
+                } else {
+                    let client = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().unwrap();
+                    let url = format!("{}/api/containers/{}/check-update", env.url, c.id);
+                    let body = serde_json::json!({ "credentials": creds });
+                    client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+                        .json(&body).send().await.ok()
+                        .and_then(|r| futures_lite::future::block_on(r.json::<ApiResponse<crate::models::ImageUpdateCheck>>()).ok())
+                        .and_then(|r| r.data)
+                        .map(|d| (d.outdated, d.current_id, d.latest_id))
+                };
+                if let Some((is_outdated, current, latest)) = check_result {
+                    if is_outdated { outdated += 1; }
+                    state.db.save_update_check(&c.name, &c.image, &env.name, &env.id, is_outdated, Some(&current), Some(&latest)).ok();
+                }
+            }
+            ("success".to_string(), format!("{} checked, {} outdated", checked, outdated))
+        }
+        "system_prune" => {
+            let mut actions = 0;
+            if env.is_local {
+                if state.docker.prune_images().await.is_ok() { actions += 1; }
+                if state.docker.prune_volumes().await.is_ok() { actions += 1; }
+                if state.docker.prune_networks().await.is_ok() { actions += 1; }
+            } else {
+                let client = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().unwrap();
+                let token = env.agent_token.as_deref().unwrap_or("");
+                for path in &["/api/images/prune", "/api/volumes/prune", "/api/networks/prune"] {
+                    let url = format!("{}{}", env.url, path);
+                    if client.post(&url).header("X-Agent-Token", token).json(&()).send().await.is_ok() {
+                        actions += 1;
+                    }
+                }
+            }
+            ("success".to_string(), format!("{} prune actions completed", actions))
+        }
+        "stack_redeploy" => {
+            let stack_name = job.stack_name.as_deref().unwrap_or("");
+            if stack_name.is_empty() {
+                ("error".to_string(), "No stack name specified".to_string())
+            } else if env.is_local {
+                match state.stacks.redeploy_stack(stack_name).await {
+                    Ok(o) => ("success".to_string(), o),
+                    Err(e) => ("error".to_string(), e),
+                }
+            } else {
+                let client = reqwest::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
+                let url = format!("{}/api/stacks/{}/redeploy", env.url, stack_name);
+                match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&()).send().await {
+                    Ok(resp) => match resp.json::<ApiResponse<String>>().await {
+                        Ok(r) if r.success => ("success".to_string(), r.data.unwrap_or_default()),
+                        Ok(r) => ("error".to_string(), r.error.unwrap_or_default()),
+                        Err(e) => ("error".to_string(), e.to_string()),
+                    },
+                    Err(e) => ("error".to_string(), e.to_string()),
+                }
+            }
+        }
+        _ => ("error".to_string(), format!("Unknown job type: {}", job.job_type)),
+    };
+
+    let next_run = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::hours(job.interval_hours as i64))
+        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default();
+
+    state.db.update_job_result(&job.id, &result, &message, &next_run).ok();
+    tracing::info!("Scheduled job {} ({}) completed: {} - {}", job.id, job.job_type, result, message);
+}
+
+/// Called every 60 seconds from the scheduler loop in main.rs
+pub async fn run_due_jobs(state: Arc<AppState>) {
+    let due_jobs = state.db.get_due_jobs();
+    for job in due_jobs {
+        tracing::info!("Executing scheduled job: {} ({})", job.job_type, job.env_id);
+        execute_job(state.clone(), job).await;
+    }
+}
+
 // === Stacks (local + remote via agent) ===
 
 macro_rules! env_or_err {

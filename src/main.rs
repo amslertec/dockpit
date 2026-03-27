@@ -128,6 +128,16 @@ async fn main() {
         update_check_running: std::sync::atomic::AtomicBool::new(false),
     });
 
+    // Start scheduler loop (checks for due jobs every 60 seconds)
+    let scheduler_state = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        loop {
+            handlers::run_due_jobs(scheduler_state.clone()).await;
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+
     // Public routes
     let public_routes = Router::new()
         .route("/api/status", get(handlers::get_status))
@@ -193,6 +203,11 @@ async fn main() {
         .route("/api/settings/webhook/test", post(handlers::test_webhook))
         .route("/api/updates/check", post(handlers::run_update_check))
         .route("/api/updates/report", delete(handlers::clear_update_report))
+        .route("/api/scheduled-jobs", get(handlers::list_scheduled_jobs))
+        .route("/api/scheduled-jobs", post(handlers::create_scheduled_job))
+        .route("/api/scheduled-jobs/{id}", put(handlers::update_scheduled_job))
+        .route("/api/scheduled-jobs/{id}", delete(handlers::delete_scheduled_job))
+        .route("/api/scheduled-jobs/{id}/run", post(handlers::run_scheduled_job))
         .layer(middleware::from_fn(auth::admin_middleware));
 
     // === SUPER_ADMIN only routes (user management) ===

@@ -231,3 +231,16 @@ export interface StatsSnapshot {
 	containers: ContainerStats[];
 	timestamp: number;
 }
+
+export interface ScheduledJob {
+	id: string;
+	env_id: string;
+	job_type: string;
+	enabled: boolean;
+	interval_hours: number;
+	stack_name?: string;
+	last_run?: string;
+	next_run?: string;
+	last_result?: string;
+	last_message?: string;
+}

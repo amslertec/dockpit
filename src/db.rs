@@ -2,7 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{EnvironmentInfo, UpdateCheckResult};
+use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -99,6 +99,20 @@ impl Database {
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                id TEXT PRIMARY KEY,
+                env_id TEXT NOT NULL,
+                job_type TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                interval_hours INTEGER NOT NULL DEFAULT 24,
+                stack_name TEXT,
+                last_run TEXT,
+                next_run TEXT,
+                last_result TEXT,
+                last_message TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
         ")?;
 
@@ -417,6 +431,79 @@ impl Database {
     pub fn clear_update_checks(&self) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM update_checks", [])?;
+        Ok(())
+    }
+
+    // === Scheduled Jobs ===
+
+    pub fn get_scheduled_jobs(&self, env_id: Option<&str>) -> Vec<ScheduledJob> {
+        let conn = self.conn.lock().unwrap();
+        let (sql, param_values): (&str, Vec<String>) = if let Some(eid) = env_id {
+            ("SELECT id, env_id, job_type, enabled, interval_hours, stack_name, last_run, next_run, last_result, last_message FROM scheduled_jobs WHERE env_id = ?1 ORDER BY created_at", vec![eid.to_string()])
+        } else {
+            ("SELECT id, env_id, job_type, enabled, interval_hours, stack_name, last_run, next_run, last_result, last_message FROM scheduled_jobs ORDER BY created_at", vec![])
+        };
+        let mut stmt = conn.prepare(sql).unwrap();
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        stmt.query_map(params.as_slice(), |row| {
+            let enabled: i32 = row.get(3)?;
+            Ok(ScheduledJob {
+                id: row.get(0)?, env_id: row.get(1)?, job_type: row.get(2)?,
+                enabled: enabled != 0, interval_hours: row.get(4)?,
+                stack_name: row.get(5)?, last_run: row.get(6)?, next_run: row.get(7)?,
+                last_result: row.get(8)?, last_message: row.get(9)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_due_jobs(&self) -> Vec<ScheduledJob> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, env_id, job_type, enabled, interval_hours, stack_name, last_run, next_run, last_result, last_message FROM scheduled_jobs WHERE enabled = 1 AND (next_run IS NULL OR next_run <= datetime('now'))"
+        ).unwrap();
+        stmt.query_map([], |row| {
+            let enabled: i32 = row.get(3)?;
+            Ok(ScheduledJob {
+                id: row.get(0)?, env_id: row.get(1)?, job_type: row.get(2)?,
+                enabled: enabled != 0, interval_hours: row.get(4)?,
+                stack_name: row.get(5)?, last_run: row.get(6)?, next_run: row.get(7)?,
+                last_result: row.get(8)?, last_message: row.get(9)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn create_scheduled_job(&self, job: &ScheduledJob) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO scheduled_jobs (id, env_id, job_type, enabled, interval_hours, stack_name, next_run) VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+            params![job.id, job.env_id, job.job_type, job.enabled as i32, job.interval_hours, job.stack_name],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_scheduled_job(&self, id: &str, enabled: Option<bool>, interval_hours: Option<i32>) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        if let Some(e) = enabled {
+            conn.execute("UPDATE scheduled_jobs SET enabled = ?1 WHERE id = ?2", params![e as i32, id])?;
+        }
+        if let Some(h) = interval_hours {
+            conn.execute("UPDATE scheduled_jobs SET interval_hours = ?1 WHERE id = ?2", params![h, id])?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_scheduled_job(&self, id: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM scheduled_jobs WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_job_result(&self, id: &str, result: &str, message: &str, next_run: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE scheduled_jobs SET last_run = datetime('now'), last_result = ?1, last_message = ?2, next_run = ?3 WHERE id = ?4",
+            params![result, message, next_run, id],
+        )?;
         Ok(())
     }
 }

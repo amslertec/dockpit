@@ -10,7 +10,9 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import TextInput from '$lib/components/ui/TextInput.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
-	import type { EnvironmentInfo, RegistryInfo } from '$lib/api/types';
+	import type { EnvironmentInfo, RegistryInfo, ScheduledJob } from '$lib/api/types';
+	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
+	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 
 	let activeTab = $state(0);
 	let loading = $state(true);
@@ -28,6 +30,16 @@
 	let connecting = $state(false);
 	let connectError = $state('');
 
+	// Scheduled Jobs
+	let jobs = $state<ScheduledJob[]>([]);
+	let jobsLoading = $state(true);
+	let showAddJob = $state(false);
+	let newJobEnv = $state('');
+	let newJobType = $state('update_check');
+	let newJobInterval = $state(24);
+	let newJobStack = $state('');
+	let creatingJob = $state(false);
+
 	// Registry
 	let registries = $state<RegistryInfo[]>([]);
 	let regRegistry = $state('');
@@ -40,6 +52,7 @@
 		{ id: 0, label: $t('env.connectedServers') },
 		{ id: 1, label: $t('env.connectRemote') },
 		{ id: 2, label: $t('env.dockerLogin') },
+		{ id: 3, label: $t('jobs.title') },
 	];
 
 	onMount(async () => {
@@ -55,6 +68,7 @@
 		if (envR.success && envR.data) environments.set(envR.data);
 		if (regR.success && regR.data) registries = regR.data;
 		loading = false;
+		loadJobs();
 
 		// Check status of each remote server in background
 		const envs = envR.success && envR.data ? envR.data : [];
@@ -116,6 +130,67 @@
 			const r = await api.del<string>(`/registries/${encodeURIComponent(registry)}`);
 			if (r.success) { toasts.success($t('env.removed')); loadAll(); } else toasts.error(r.error || $t('common.error'));
 		}};
+	}
+
+	// === Scheduled Jobs ===
+	async function loadJobs() {
+		jobsLoading = true;
+		const r = await api.get<ScheduledJob[]>('/scheduled-jobs');
+		if (r.success && r.data) jobs = r.data;
+		jobsLoading = false;
+	}
+
+	async function createJob(e: Event) {
+		e.preventDefault();
+		creatingJob = true;
+		const body: any = { env_id: newJobEnv, job_type: newJobType, interval_hours: newJobInterval };
+		if (newJobType === 'stack_redeploy' && newJobStack) body.stack_name = newJobStack;
+		const r = await api.post<ScheduledJob>('/scheduled-jobs', body);
+		creatingJob = false;
+		if (r.success) { showAddJob = false; toasts.success($t('jobs.created')); loadJobs(); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function toggleJob(id: string, enabled: boolean) {
+		await api.put<string>(`/scheduled-jobs/${id}`, { enabled });
+		loadJobs();
+	}
+
+	async function deleteJob(id: string) {
+		confirmDlg = { message: $t('jobs.confirmDelete'), action: async () => {
+			confirmDlg = null;
+			const r = await api.del<string>(`/scheduled-jobs/${id}`);
+			if (r.success) { toasts.success($t('jobs.deleted')); loadJobs(); }
+			else toasts.error(r.error || $t('common.error'));
+		}};
+	}
+
+	async function runJob(id: string) {
+		const r = await api.post<string>(`/scheduled-jobs/${id}/run`, {});
+		if (r.success) toasts.success($t('jobs.started'));
+		else toasts.error(r.error || $t('common.error'));
+		setTimeout(loadJobs, 2000);
+	}
+
+	function envName(envId: string): string {
+		return $environments.find(e => e.id === envId)?.name || envId;
+	}
+
+	function jobTypeLabel(type: string): string {
+		const map: Record<string, string> = {
+			'update_check': $t('jobs.updateCheck'),
+			'system_prune': $t('jobs.systemPrune'),
+			'stack_redeploy': $t('jobs.stackRedeploy'),
+		};
+		return map[type] || type;
+	}
+
+	function intervalLabel(hours: number): string {
+		const map: Record<number, string> = {
+			1: $t('jobs.every1h'), 6: $t('jobs.every6h'), 12: $t('jobs.every12h'),
+			24: $t('jobs.every24h'), 48: $t('jobs.every48h'), 168: $t('jobs.weekly'),
+		};
+		return map[hours] || `${hours}h`;
 	}
 </script>
 
@@ -273,6 +348,75 @@
 						<Button variant="primary" size="md" type="submit" loading={regLoading}>{regLoading ? $t('env.loggingIn') : $t('env.loginButton')}</Button>
 					</form>
 				</div>
+
+			<!-- Tab 3: Scheduled Jobs -->
+			{:else if activeTab === 3}
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-sm font-semibold text-primary">{$t('jobs.title')}</h3>
+					<Button variant="primary" size="sm" onclick={() => { newJobEnv = ''; newJobType = 'update_check'; newJobInterval = 24; newJobStack = ''; showAddJob = true; }}>{$t('jobs.addJob')}</Button>
+				</div>
+
+				{#if jobsLoading}
+					<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin"></div></div>
+				{:else if jobs.length === 0}
+					<div class="px-4 py-12 text-center bg-0 rounded-lg border border-theme">
+						<svg class="w-10 h-10 mx-auto mb-3 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+						<p class="text-sm font-medium text-primary mb-1">{$t('jobs.noJobs')}</p>
+						<p class="text-xs text-muted">{$t('jobs.noJobsDesc')}</p>
+					</div>
+				{:else}
+					<div class="overflow-x-auto">
+						<table class="w-full">
+							<thead><tr class="border-b border-theme">
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('updates.server')}</th>
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('jobs.type')}</th>
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('jobs.interval')}</th>
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('jobs.lastRun')}</th>
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('jobs.result')}</th>
+								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
+							</tr></thead>
+							<tbody>
+								{#each jobs as job}
+									<tr class="border-b border-theme last:border-0 hover:bg-hover transition">
+										<td class="px-4 py-2.5 text-sm font-medium text-primary">{envName(job.env_id)}</td>
+										<td class="px-4 py-2.5 text-xs text-secondary">
+											{jobTypeLabel(job.job_type)}
+											{#if job.stack_name}<span class="text-muted ml-1">({job.stack_name})</span>{/if}
+										</td>
+										<td class="px-4 py-2.5 text-xs text-secondary">{intervalLabel(job.interval_hours)}</td>
+										<td class="px-4 py-2.5 text-xs text-secondary">{job.last_run || $t('jobs.never')}</td>
+										<td class="px-4 py-2.5">
+											{#if job.last_result === 'success'}
+												<span class="inline-flex items-center gap-1 text-[11px] text-[var(--green)]">
+													<span class="w-1.5 h-1.5 rounded-full bg-[var(--green)]"></span>
+													{$t('jobs.success')}
+												</span>
+											{:else if job.last_result === 'error'}
+												<span class="inline-flex items-center gap-1 text-[11px] text-[var(--red)]">
+													<span class="w-1.5 h-1.5 rounded-full bg-[var(--red)]"></span>
+													{$t('jobs.error')}
+												</span>
+											{:else}
+												<span class="text-[11px] text-muted">—</span>
+											{/if}
+										</td>
+										<td class="px-4 py-2.5">
+											<div class="flex items-center gap-2">
+												<CustomCheckbox checked={job.enabled} onchange={(val) => toggleJob(job.id, val)} size="sm" />
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" title={$t('jobs.runNow')} onclick={() => runJob(job.id)}>
+													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+												</button>
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('common.delete')} onclick={() => deleteJob(job.id)}>
+													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+												</button>
+											</div>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -290,6 +434,59 @@
 			<div class="flex justify-end gap-2 pt-2">
 				<Button variant="secondary" size="sm" onclick={() => editEnv = null}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit" loading={editSaving}>{editSaving ? $t('common.saving') : $t('common.save')}</Button>
+			</div>
+		</form>
+	</Modal>
+{/if}
+
+{#if showAddJob}
+	<Modal title={$t('jobs.addJob')} onclose={() => showAddJob = false}>
+		<form onsubmit={createJob} class="space-y-3">
+			<div>
+				<label class="block text-xs font-medium text-primary mb-1">{$t('updates.server')}</label>
+				<CustomSelect
+					options={$environments.map(e => ({ value: e.id, label: e.name }))}
+					value={newJobEnv}
+					onchange={(v) => newJobEnv = String(v)}
+					placeholder={$t('jobs.selectServer')}
+				/>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-primary mb-1">{$t('jobs.type')}</label>
+				<CustomSelect
+					options={[
+						{ value: 'update_check', label: $t('jobs.updateCheck') },
+						{ value: 'system_prune', label: $t('jobs.systemPrune') },
+						{ value: 'stack_redeploy', label: $t('jobs.stackRedeploy') },
+					]}
+					value={newJobType}
+					onchange={(v) => newJobType = String(v)}
+					placeholder={$t('jobs.selectType')}
+				/>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-primary mb-1">{$t('jobs.interval')}</label>
+				<CustomSelect
+					options={[
+						{ value: 1, label: $t('jobs.every1h') },
+						{ value: 6, label: $t('jobs.every6h') },
+						{ value: 12, label: $t('jobs.every12h') },
+						{ value: 24, label: $t('jobs.every24h') },
+						{ value: 48, label: $t('jobs.every48h') },
+						{ value: 168, label: $t('jobs.weekly') },
+					]}
+					value={newJobInterval}
+					onchange={(v) => newJobInterval = Number(v)}
+				/>
+			</div>
+			{#if newJobType === 'stack_redeploy'}
+				<div>
+					<TextInput bind:value={newJobStack} label={$t('jobs.selectStack')} placeholder="stack-name" id="job-stack" />
+				</div>
+			{/if}
+			<div class="flex justify-end gap-2 pt-2">
+				<Button variant="secondary" size="sm" onclick={() => showAddJob = false}>{$t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" type="submit" loading={creatingJob}>{creatingJob ? $t('common.loading') : $t('common.create')}</Button>
 			</div>
 		</form>
 	</Modal>

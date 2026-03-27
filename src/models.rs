@@ -349,6 +349,36 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Scheduled Jobs Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledJob {
+    pub id: String,
+    pub env_id: String,
+    pub job_type: String,
+    pub enabled: bool,
+    pub interval_hours: i32,
+    pub stack_name: Option<String>,
+    pub last_run: Option<String>,
+    pub next_run: Option<String>,
+    pub last_result: Option<String>,
+    pub last_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateJobRequest {
+    pub env_id: String,
+    pub job_type: String,
+    pub interval_hours: i32,
+    pub stack_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateJobRequest {
+    pub enabled: Option<bool>,
+    pub interval_hours: Option<i32>,
+}
+
 // === Settings Models ===
 
 #[derive(Debug, Serialize, Deserialize)]
