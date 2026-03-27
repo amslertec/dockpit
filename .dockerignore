@@ -22,7 +22,7 @@ frontend/README.md
 docker-compose*.yml
 docker-compose*.yaml
 Dockerfile.agent
-docker-push.sh
+docker-push*.sh
 .dockerignore
 
 # IDE / OS

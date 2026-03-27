@@ -24,6 +24,8 @@ Thumbs.db
 docker-compose.yml
 docker-compose.agent.yml
 docker-push.sh
+docker-push-server.sh
+docker-push-agent.sh
 
 # === Docker ===
 dockpit_data/
