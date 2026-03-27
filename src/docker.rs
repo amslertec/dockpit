@@ -624,9 +624,10 @@ async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str) -> Re
         .timeout(std::time::Duration::from_secs(15))
         .build().map_err(|e| e.to_string())?;
 
-    let token = get_registry_token(&client, registry, repo, true).await
-        .or_else(|_| futures_lite::future::block_on(get_registry_token(&client, registry, repo, false)))
-        .unwrap_or_default();
+    let token = match get_registry_token(&client, registry, repo, true).await {
+        Ok(t) => t,
+        Err(_) => get_registry_token(&client, registry, repo, false).await.unwrap_or_default(),
+    };
 
     let auth_header = if !token.is_empty() { format!("Bearer {}", token) } else { String::new() };
 
@@ -701,9 +702,10 @@ async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<
         .map_err(|e| e.to_string())?;
 
     // Try authenticated first, fall back to anonymous
-    let token = get_registry_token(&client, registry, repo, true).await
-        .or_else(|_| futures_lite::future::block_on(get_registry_token(&client, registry, repo, false)))
-        .unwrap_or_default();
+    let token = match get_registry_token(&client, registry, repo, true).await {
+        Ok(t) => t,
+        Err(_) => get_registry_token(&client, registry, repo, false).await.unwrap_or_default(),
+    };
 
     let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
     let mut req = client.head(&url)
@@ -731,15 +733,27 @@ async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<
         .ok_or_else(|| "No digest in response".into())
 }
 
-/// Read Docker credentials from ~/.docker/config.json
+/// Read Docker credentials from docker config.json
 fn read_docker_credentials(registry: &str) -> Option<(String, String)> {
-    let config_path = dirs_next::home_dir()?.join(".docker/config.json");
-    let content = std::fs::read_to_string(&config_path).ok()?;
-    let config: serde_json::Value = serde_json::from_str(&content).ok()?;
+    // Try multiple config locations
+    let paths = [
+        std::path::PathBuf::from("/root/.docker/config.json"),
+        std::env::var("DOCKER_CONFIG").ok()
+            .map(|p| std::path::PathBuf::from(p).join("config.json"))
+            .unwrap_or_default(),
+        dirs_next::home_dir()
+            .map(|h| h.join(".docker/config.json"))
+            .unwrap_or_default(),
+    ];
 
+    let content = paths.iter()
+        .filter(|p| p.as_os_str().len() > 0)
+        .find_map(|p| std::fs::read_to_string(p).ok())?;
+
+    let config: serde_json::Value = serde_json::from_str(&content).ok()?;
     let auths = config.get("auths")?.as_object()?;
 
-    // Try exact match first, then partial match
+    // Try exact match, then common aliases
     let auth_entry = auths.get(registry)
         .or_else(|| auths.get(&format!("https://{}", registry)))
         .or_else(|| {
@@ -747,8 +761,10 @@ fn read_docker_credentials(registry: &str) -> Option<(String, String)> {
                 auths.get("https://index.docker.io/v1/")
                     .or_else(|| auths.get("https://index.docker.io/v2/"))
                     .or_else(|| auths.get("docker.io"))
+                    .or_else(|| auths.get("registry-1.docker.io"))
             } else {
-                None
+                // Try partial match for custom registries
+                auths.iter().find(|(k, _)| k.contains(registry)).map(|(_, v)| v)
             }
         })?;
 
