@@ -3,11 +3,14 @@
 	import { statsStore, currentStats } from '$lib/stores/stats';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
+	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import type { ContainerStats } from '$lib/api/types';
 
 	let search = $state('');
 	let sortKey = $state<keyof ContainerStats>('cpu_percent');
 	let sortAsc = $state(false);
+	let page = $state(1);
+	let perPage = $state(15);
 
 	function formatBytes(b: number): string {
 		if (b < 1024) return b + ' B';
@@ -41,6 +44,12 @@
 					: String(bv).localeCompare(String(av));
 			})
 	);
+
+	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
+
+	$effect(() => { search; page = 1; });
+
+	function handlePageChange(p: number, pp: number) { page = p; perPage = pp; }
 
 	const totalCpu = $derived(($currentStats || []).reduce((s: number, c: ContainerStats) => s + c.cpu_percent, 0));
 	const totalMemUsage = $derived(($currentStats || []).reduce((s: number, c: ContainerStats) => s + c.memory_usage, 0));
@@ -155,7 +164,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each filtered as c (c.id)}
+						{#each paged as c (c.id)}
 							<tr class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
 								<td class="px-4 py-3 font-medium text-[var(--text)]">{c.name}</td>
 								<td class="px-4 py-3 text-right tabular-nums" style="color: {barColor(c.cpu_percent)}">{c.cpu_percent.toFixed(1)}%</td>
@@ -178,6 +187,7 @@
 					</tbody>
 				</table>
 			</div>
+			<Pagination total={filtered.length} {page} {perPage} onchange={handlePageChange} />
 		</div>
 	{/if}
 </div>
