@@ -21,7 +21,8 @@ RUN apk add --no-cache git curl \
     && git clone --depth 1 --branch ${COMPOSE_VERSION} https://github.com/docker/compose.git /src
 WORKDIR /src
 ENV GOTOOLCHAIN=auto
-RUN go get google.golang.org/grpc@v1.79.3 \
+RUN go get github.com/moby/buildkit@v0.28.1 \
+    && go get google.golang.org/grpc@v1.79.3 \
     && go get go.opentelemetry.io/otel/sdk@v1.40.0 \
     && go get go.opentelemetry.io/otel@v1.40.0 \
     && go get go.opentelemetry.io/otel/trace@v1.40.0 \
