@@ -46,7 +46,7 @@
 		{required}
 		{maxlength}
 		oninput={handleInput}
-		class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-3 py-2.5 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]
+		class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-3 py-2.5 text-[16px] md:text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]
 		focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)]
 		transition-all duration-200
 		{disabled ? 'opacity-50 cursor-not-allowed' : ''}

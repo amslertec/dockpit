@@ -27,11 +27,11 @@
 	});
 </script>
 
-<div class="relative flex border-b border-[var(--border)]">
+<div class="relative flex border-b border-[var(--border)] overflow-x-auto scrollbar-none">
 	{#each tabs as tab, i}
 		<button
 			bind:this={tabEls[i]}
-			class="px-5 py-3 text-xs font-medium transition-colors duration-200 relative z-10
+			class="px-5 py-3 text-xs font-medium transition-colors duration-200 relative z-10 whitespace-nowrap shrink-0
 			{active === tab.id ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:text-[var(--text)]'}"
 			onclick={() => onchange(tab.id)}
 		>
@@ -43,3 +43,8 @@
 		style={indicatorStyle}
 	></div>
 </div>
+
+<style>
+	.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+	.scrollbar-none::-webkit-scrollbar { display: none; }
+</style>

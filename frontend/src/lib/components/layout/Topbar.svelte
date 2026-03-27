@@ -61,12 +61,12 @@
 		{#if $environments.length > 0}
 			<div class="relative">
 				<button
-					class="flex items-center gap-2 bg-[var(--bg-3)] border border-[var(--border)] rounded-[var(--radius-md)] px-3.5 py-2 text-xs text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all duration-200 min-w-[130px] max-w-[220px]"
+					class="flex items-center gap-2 bg-[var(--bg-3)] border border-[var(--border)] rounded-[var(--radius-md)] px-2 py-2 md:px-3.5 text-xs text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all duration-200 max-w-[220px]"
 					onclick={(e: MouseEvent) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
 				>
 					<span class="w-2 h-2 rounded-full shrink-0 {currentEnv?.status === 'online' || currentEnv?.is_local ? 'bg-[var(--green)] shadow-[var(--shadow-glow-green)]' : 'bg-[var(--red)]'}"></span>
-					<span class="truncate font-medium">{currentEnvName}</span>
-					<svg class="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0 transition-transform duration-200 {dropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="truncate font-medium hidden md:inline">{currentEnvName}</span>
+					<svg class="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0 transition-transform duration-200 hidden md:block {dropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 				</button>
 
 				{#if dropdownOpen}
