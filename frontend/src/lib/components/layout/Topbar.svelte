@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { theme } from '$lib/stores/theme';
 	import { selectedEnv, environments } from '$lib/stores/environment';
-	import { t } from '$lib/i18n';
+	import { t, locale } from '$lib/i18n';
 
 	interface Props {
 		title: string;
@@ -69,6 +69,16 @@
 			</div>
 		{/if}
 
+		<!-- Language toggle with flags -->
+		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] hover:border-[var(--border-light)] transition-all duration-200 text-base leading-none" aria-label="Language" onclick={() => locale.toggle()} title={$locale === 'en' ? 'Deutsch' : 'English'}>
+			{#if $locale === 'en'}
+				<svg class="w-5 h-5" viewBox="0 0 36 36"><path fill="#FFCD05" d="M0 27a4 4 0 004 4h28a4 4 0 004-4v-3H0v3z"/><path fill="#ED1F24" d="M0 12h36v12H0z"/><path fill="#141414" d="M32 5H4a4 4 0 00-4 4v3h36V9a4 4 0 00-4-4z"/></svg>
+			{:else}
+				<svg class="w-5 h-5" viewBox="0 0 36 36"><path fill="#00247D" d="M32 5H4a4 4 0 00-4 4v18a4 4 0 004 4h28a4 4 0 004-4V9a4 4 0 00-4-4z"/><path fill="#CF1B2B" d="M22.6 13.5L36 7.3V9l-9.7 4.5h-3.7zM36 27l-14.2-6.5h3.7L36 25v2zM0 9v-1.7l14.2 6.5H10.5L0 9.3V9zM0 27v-2l10.5-4.5h3.7L0 27z"/><path fill="#EEE" d="M36 14.5v7H20.5V31h-5V21.5H0v-7h15.5V5h5v9.5z"/><path fill="#CF1B2B" d="M36 16v4H19v11h-2V20H0v-4h17V5h2v11z"/></svg>
+			{/if}
+		</button>
+
+		<!-- Theme toggle -->
 		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-glow)] transition-all duration-300" aria-label={$t('topbar.theme')} onclick={() => theme.toggle()}>
 			{#if $theme === 'dark'}
 				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
