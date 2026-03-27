@@ -319,7 +319,7 @@ struct CheckUpdateBody {
     credentials: Option<Vec<RegistryCredential>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct RegistryCredential {
     registry: String,
     username: String,
@@ -354,7 +354,7 @@ async fn check_container_update(
     let (registry, repo, tag) = parse_image_ref(&image_name);
 
     // Extract credentials sent by DockPit server
-    let creds = body.and_then(|b| b.credentials.clone()).unwrap_or_default();
+    let creds = body.and_then(|Json(b)| b.credentials).unwrap_or_else(Vec::new);
 
     let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag, &creds).await {
         Ok(d) => d,
