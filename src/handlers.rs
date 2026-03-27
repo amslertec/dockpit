@@ -593,9 +593,14 @@ pub async fn run_update_check(
                         .ok().map(|(o, c, l)| (o, c, l, container.image.clone()))
                 } else {
                     let url = format!("{}/api/containers/{}/check-update", env.url, container.id);
+                    let creds: Vec<_> = state_clone.db.get_all_registry_credentials()
+                        .into_iter()
+                        .map(|(r, u, p)| serde_json::json!({"registry": r, "username": u, "password": p}))
+                        .collect();
+                    let body = serde_json::json!({ "credentials": creds });
                     match client.post(&url)
                         .header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
-                        .json(&()).send().await
+                        .json(&body).send().await
                     {
                         Ok(resp) => resp.json::<ApiResponse<ImageUpdateCheck>>().await
                             .ok().and_then(|r| r.data)
@@ -907,9 +912,16 @@ pub async fn env_check_container_update(
             Err(e) => Json(ApiResponse::err(e)),
         }
     } else {
-        let client = reqwest::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
+        // Send registry credentials to agent so it can check private repos
+        let creds: Vec<_> = state.db.get_all_registry_credentials()
+            .into_iter()
+            .map(|(registry, username, password)| serde_json::json!({ "registry": registry, "username": username, "password": password }))
+            .collect();
+        let body = serde_json::json!({ "credentials": creds });
+
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().unwrap();
         let url = format!("{}/api/containers/{}/check-update", env.url, container_id);
-        match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&()).send().await {
+        match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&body).send().await {
             Ok(resp) => match resp.json::<ApiResponse<ImageUpdateCheck>>().await { Ok(d) => Json(d), Err(e) => Json(ApiResponse::err(e.to_string())) },
             Err(e) => Json(ApiResponse::err(format!("Agent: {}", e))),
         }

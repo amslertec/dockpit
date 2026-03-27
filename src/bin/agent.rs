@@ -6,6 +6,7 @@
 //! Usage:
 //!   docker run -d -p 5522:5522 -v /var/run/docker.sock:/var/run/docker.sock dockpit-agent
 
+use base64::Engine;
 use axum::{
     Router,
     extract::{Path, Query, State, ws::{Message, WebSocket, WebSocketUpgrade}},
@@ -313,59 +314,66 @@ struct ImageUpdateCheck {
     image: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct CheckUpdateBody {
+    credentials: Option<Vec<RegistryCredential>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegistryCredential {
+    registry: String,
+    username: String,
+    password: String,
+}
+
 async fn check_container_update(
     State(state): State<Arc<AgentState>>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    body: Option<Json<CheckUpdateBody>>,
 ) -> Result<Json<ApiResponse<ImageUpdateCheck>>, StatusCode> {
     state.check_auth(&headers)?;
 
-    // Inspect container to get image name
     let container = state.docker.inspect_container(&id, None).await
         .map_err(|_| StatusCode::NOT_FOUND)?;
     let image_name = container.config
         .and_then(|c| c.image)
         .unwrap_or_default();
 
-    // Inspect local image to get repo digests
     let local_image = state.docker.inspect_image(&image_name).await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let local_digests = local_image.repo_digests.unwrap_or_default();
     let local_id = local_image.id.unwrap_or_default();
+    let local_digests = local_image.repo_digests.unwrap_or_default();
 
-    // Get local repo digest
-    let local_digest = local_digests.iter()
-        .find(|d| d.contains('@'))
-        .map(|d| d.split('@').nth(1).unwrap_or("").to_string())
-        .unwrap_or_default();
-
-    if local_digest.is_empty() {
-        // Locally built image — can't compare with registry
+    if local_digests.is_empty() {
         return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
             outdated: false, current_id: local_id.clone(), latest_id: local_id, image: image_name,
         })));
     }
 
-    // Parse image ref → registry, repo, tag
     let (registry, repo, tag) = parse_image_ref(&image_name);
 
-    // Fetch remote digest from registry (no pull!)
-    let remote_digest = match fetch_registry_digest(&registry, &repo, &tag).await {
+    // Extract credentials sent by DockPit server
+    let creds = body.and_then(|b| b.credentials.clone()).unwrap_or_default();
+
+    let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag, &creds).await {
         Ok(d) => d,
         Err(_) => {
             return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-                outdated: false, current_id: local_digest.clone(), latest_id: local_digest, image: image_name,
+                outdated: false, current_id: local_id.clone(), latest_id: local_id, image: image_name,
             })));
         }
     };
 
-    let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
+    let local_clean = local_id.trim_start_matches("sha256:").to_string();
+    let remote_clean = remote_config_digest.trim_start_matches("sha256:").to_string();
+    let outdated = !remote_clean.is_empty() && local_clean != remote_clean;
+
     Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-        outdated, current_id: local_digest, latest_id: remote_digest, image: image_name,
+        outdated, current_id: local_id, latest_id: remote_config_digest, image: image_name,
     })))
 }
 
-/// Parse image reference into (registry, repo, tag)
 fn parse_image_ref(image: &str) -> (String, String, String) {
     let (name, tag) = if let Some((n, t)) = image.rsplit_once(':') {
         if t.contains('/') { (image, "latest") } else { (n, t) }
@@ -382,47 +390,94 @@ fn parse_image_ref(image: &str) -> (String, String, String) {
     }
 }
 
-/// Fetch digest from registry via HTTP API (no pull needed)
-async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
+/// Find credentials for a registry from the list sent by DockPit server
+fn find_credentials(registry: &str, creds: &[RegistryCredential]) -> Option<(String, String)> {
+    creds.iter().find(|c| {
+        let r = c.registry.to_lowercase();
+        if registry.contains("docker.io") || registry.contains("registry-1") {
+            r == "docker.io" || r.contains("docker.io") || r.contains("index.docker.io")
+        } else {
+            r.contains(registry) || registry.contains(&r)
+        }
+    }).map(|c| (c.username.clone(), c.password.clone()))
+}
+
+async fn get_registry_token_with_creds(client: &reqwest::Client, registry: &str, repo: &str, creds: &[RegistryCredential]) -> Result<String, String> {
+    let auth = find_credentials(registry, creds);
+
+    if registry.contains("docker.io") || registry.contains("registry-1") {
+        let url = format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull", repo);
+        let mut req = client.get(&url);
+        if let Some((user, pass)) = &auth { req = req.basic_auth(user, Some(pass)); }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        let token = data["token"].as_str().unwrap_or("").to_string();
+        if token.is_empty() { return Err("No token".into()); }
+        return Ok(token);
+    }
+    if registry.contains("ghcr.io") {
+        let url = format!("https://ghcr.io/token?service=ghcr.io&scope=repository:{}:pull", repo);
+        let mut req = client.get(&url);
+        if let Some((user, pass)) = &auth { req = req.basic_auth(user, Some(pass)); }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        let token = data["token"].as_str().unwrap_or("").to_string();
+        if token.is_empty() { return Err("No token".into()); }
+        return Ok(token);
+    }
+    if let Some((user, pass)) = auth {
+        return Ok(format!("Basic {}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, format!("{}:{}", user, pass))));
+    }
+    Ok(String::new())
+}
+
+async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str, creds: &[RegistryCredential]) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build().map_err(|e| e.to_string())?;
 
-    let token = get_registry_token(&client, registry, repo).await.unwrap_or_default();
+    let token = get_registry_token_with_creds(&client, registry, repo, creds).await.unwrap_or_default();
+    let auth_header = if !token.is_empty() { format!("Bearer {}", token) } else { String::new() };
 
+    // GET manifest list / OCI index
     let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
-    let mut req = client.head(&url)
-        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+    let mut req = client.get(&url)
         .header("Accept", "application/vnd.oci.image.index.v1+json")
-        .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
-    if !token.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
-
+        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+        .header("Accept", "application/vnd.oci.image.manifest.v1+json");
+    if !auth_header.is_empty() { req = req.header("Authorization", &auth_header); }
     let resp = req.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("Registry returned {}", resp.status()));
     }
-    resp.headers().get("docker-content-digest")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No digest".into())
-}
 
-async fn get_registry_token(client: &reqwest::Client, registry: &str, repo: &str) -> Result<String, String> {
-    if registry.contains("docker.io") || registry.contains("registry-1") {
-        let url = format!("https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull", repo);
-        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        return Ok(data["token"].as_str().unwrap_or("").to_string());
+    let content_type = resp.headers().get("content-type")
+        .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    if content_type.contains("manifest.list") || content_type.contains("image.index") {
+        let manifests = body["manifests"].as_array().ok_or("No manifests in index")?;
+        let amd64 = manifests.iter().find(|m| {
+            let p = &m["platform"];
+            p["architecture"].as_str().unwrap_or("") == "amd64"
+                && p["os"].as_str().unwrap_or("") == "linux"
+                && !m["mediaType"].as_str().unwrap_or("").contains("attestation")
+        }).ok_or("No linux/amd64 manifest")?;
+        let manifest_digest = amd64["digest"].as_str().ok_or("No digest")?;
+
+        let manifest_url = format!("https://{}/v2/{}/manifests/{}", registry, repo, manifest_digest);
+        let mut req = client.get(&manifest_url)
+            .header("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+            .header("Accept", "application/vnd.oci.image.manifest.v1+json");
+        if !auth_header.is_empty() { req = req.header("Authorization", &auth_header); }
+        let resp = req.send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() { return Err(format!("Registry returned {}", resp.status())); }
+        let manifest: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        manifest["config"]["digest"].as_str().map(|s| s.to_string()).ok_or_else(|| "No config digest".into())
+    } else {
+        body["config"]["digest"].as_str().map(|s| s.to_string()).ok_or_else(|| "No config digest".into())
     }
-    if registry.contains("ghcr.io") {
-        let url = format!("https://ghcr.io/token?service=ghcr.io&scope=repository:{}:pull", repo);
-        let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
-        let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        return Ok(data["token"].as_str().unwrap_or("").to_string());
-    }
-    Ok(String::new())
 }
 
 async fn recreate_container(
