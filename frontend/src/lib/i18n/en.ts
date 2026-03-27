@@ -482,4 +482,13 @@ export const en: Record<string, string> = {
 	'monitoring.write': 'Write',
 	'monitoring.rx': 'RX',
 	'monitoring.tx': 'TX',
+
+	// === Command Palette ===
+	'palette.title': 'Search...',
+	'palette.pages': 'Pages',
+	'palette.containers': 'Containers',
+	'palette.stacks': 'Stacks',
+	'palette.servers': 'Servers',
+	'palette.noResults': 'No results',
+	'palette.hint': 'Type to search, ↑↓ to navigate, Enter to select',
 };

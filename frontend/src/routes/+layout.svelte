@@ -12,6 +12,7 @@
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import Topbar from '$lib/components/layout/Topbar.svelte';
 	import Toast from '$lib/components/ui/Toast.svelte';
+	import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -19,6 +20,14 @@
 	let ready = $state(false);
 	let sidebarOpen = $state(false);
 	let envsLoaded = $state(false);
+	let showPalette = $state(false);
+
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+			e.preventDefault();
+			showPalette = !showPalette;
+		}
+	}
 
 	const publicRoutes = ['/login', '/setup'];
 	const isPublic = $derived(publicRoutes.some((r) => $page.url.pathname.startsWith(r)));
@@ -98,6 +107,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={handleGlobalKeydown} />
+
 <Toast />
 
 {#if !ready}
@@ -114,11 +125,15 @@
 		<Sidebar open={sidebarOpen} onclose={() => (sidebarOpen = false)} />
 		<div class="flex-1 flex flex-col min-w-0">
 			<div class="relative z-50">
-				<Topbar title={pageTitle} ontoggle={() => (sidebarOpen = !sidebarOpen)} />
+				<Topbar title={pageTitle} ontoggle={() => (sidebarOpen = !sidebarOpen)} onsearch={() => showPalette = true} />
 			</div>
 			<main class="flex-1 overflow-y-auto p-4 md:p-5">
 				{@render children()}
 			</main>
 		</div>
 	</div>
+{/if}
+
+{#if showPalette}
+	<CommandPalette onclose={() => showPalette = false} />
 {/if}

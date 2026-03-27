@@ -6,8 +6,9 @@
 	interface Props {
 		title: string;
 		ontoggle: () => void;
+		onsearch?: () => void;
 	}
-	let { title, ontoggle }: Props = $props();
+	let { title, ontoggle, onsearch }: Props = $props();
 
 	let dropdownOpen = $state(false);
 
@@ -68,6 +69,11 @@
 				{/if}
 			</div>
 		{/if}
+
+		<!-- Search (Ctrl+K) -->
+		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all duration-200" aria-label="Search" title="Search (Ctrl+K)" onclick={onsearch}>
+			<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+		</button>
 
 		<!-- Language toggle with flags -->
 		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] hover:border-[var(--border-light)] transition-all duration-200 text-base leading-none" aria-label="Language" onclick={() => locale.toggle()} title={$locale === 'en' ? 'Deutsch' : 'English'}>
