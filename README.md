@@ -33,6 +33,13 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Live Updates** — Results appear in real-time during active scans
 - **Requires Docker Hub Login** — Free Personal plan sufficient (info banner on page)
 
+### Audit Log
+- **Action Tracking** — Every user action logged with timestamp, user, action, target
+- **17 Action Types** — Login, container ops, stack ops, user management, settings, scans
+- **Filter & Search** — Filter by user and action type
+- **30-Day Retention** — Auto-cleanup of old entries
+- **Dedicated /audit Page** — Under "Management" in sidebar
+
 ### Container Event Log
 - **Live Timeline** — Real-time container events: start, stop, restart, OOM
 - **Dedicated /events Page** — Under "Management" in sidebar
