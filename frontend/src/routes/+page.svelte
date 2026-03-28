@@ -167,6 +167,7 @@
 
 	function toggleEditMode() {
 		editMode = !editMode;
+		tabs = getTabs(); // Sync tabs when toggling edit mode
 		if (grid) {
 			if (editMode) {
 				grid.enableMove(true);
@@ -191,6 +192,8 @@
 			grid.enableMove(false);
 			grid.enableResize(false);
 		}
+		// Sync tabs from storage to avoid ghost tabs
+		tabs = getTabs();
 		toasts.success($t('home.layoutSaved'));
 	}
 
@@ -226,6 +229,8 @@
 		tabs = getTabs();
 		activeTabId = tab.id;
 		await rebuildGrid();
+		// Auto-start rename so user can type the name immediately
+		startRenameTab(tab.id, tab.name);
 	}
 
 	function startRenameTab(tabId: string, currentName: string) {
