@@ -37,15 +37,9 @@
 		showSuggestions = true;
 		searchTimeout = setTimeout(async () => {
 			try {
-				const resp = await fetch(`https://hub.docker.com/v2/search/repositories/?query=${encodeURIComponent(val)}&page_size=8`);
-				if (resp.ok) {
-					const data = await resp.json();
-					searchResults = (data.results || []).map((r: any) => ({
-						name: r.repo_name || r.name || '',
-						description: (r.short_description || r.description || '').substring(0, 80),
-						is_official: r.is_official || false,
-						star_count: r.star_count || 0,
-					}));
+				const r = await api.get<{name: string; description: string; is_official: boolean; star_count: number}[]>(`/search/images?q=${encodeURIComponent(val)}`);
+				if (r.success && r.data) {
+					searchResults = r.data;
 				}
 			} catch {}
 			searchLoading = false;

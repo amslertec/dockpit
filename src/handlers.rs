@@ -1819,6 +1819,34 @@ pub async fn remove_registry(
     }
 }
 
+// === Docker Hub Search ===
+
+pub async fn search_docker_hub(
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    let q = query.get("q").map(|s| s.as_str()).unwrap_or("");
+    if q.len() < 2 {
+        return Json(ApiResponse::ok(vec![]));
+    }
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap();
+    let url = format!("https://hub.docker.com/v2/search/repositories/?query={}&page_size=8", urlencoding::encode(q));
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            let data: serde_json::Value = resp.json().await.unwrap_or_default();
+            let results = data["results"].as_array().map(|arr| {
+                arr.iter().map(|r| serde_json::json!({
+                    "name": r["repo_name"].as_str().unwrap_or(""),
+                    "description": r["short_description"].as_str().unwrap_or("").chars().take(80).collect::<String>(),
+                    "is_official": r["is_official"].as_bool().unwrap_or(false),
+                    "star_count": r["star_count"].as_i64().unwrap_or(0),
+                })).collect()
+            }).unwrap_or_default();
+            Json(ApiResponse::ok(results))
+        }
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
 // === Stack Templates ===
 
 pub async fn list_templates(
