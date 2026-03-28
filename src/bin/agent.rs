@@ -1194,7 +1194,7 @@ async fn agent_scan_vulnerability(
     if image.is_empty() { return Ok(Json(ApiResponse::err("No image specified"))); }
 
     let output = tokio::process::Command::new("docker")
-        .args(["scout", "cves", "--format", "json", "--only-severity", "critical,high,medium,low", &image])
+        .args(["scout", "cves", "--format", "sarif", &image])
         .output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if !output.status.success() {
@@ -1203,7 +1203,7 @@ async fn agent_scan_vulnerability(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+    let sarif: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
 
     let mut critical = 0i32;
     let mut high = 0i32;
@@ -1211,21 +1211,31 @@ async fn agent_scan_vulnerability(
     let mut low = 0i32;
     let mut cves = Vec::new();
 
-    if let Some(vulns) = json.pointer("/vulnerabilities").and_then(|v| v.as_array()) {
-        for v in vulns {
-            let sev = v.get("severity").and_then(|s| s.as_str()).unwrap_or("");
-            match sev.to_lowercase().as_str() {
-                "critical" => critical += 1, "high" => high += 1,
-                "medium" => medium += 1, "low" => low += 1, _ => {}
+    if let Some(runs) = sarif.get("runs").and_then(|r| r.as_array()) {
+        if let Some(run) = runs.first() {
+            let rules: std::collections::HashMap<String, &serde_json::Value> = run
+                .pointer("/tool/driver/rules").and_then(|r| r.as_array())
+                .map(|arr| arr.iter().filter_map(|r| r.get("id").and_then(|id| id.as_str()).map(|id| (id.to_string(), r))).collect())
+                .unwrap_or_default();
+
+            if let Some(results) = run.get("results").and_then(|r| r.as_array()) {
+                for result in results {
+                    let rule_id = result.get("ruleId").and_then(|r| r.as_str()).unwrap_or("");
+                    let rule = rules.get(rule_id);
+                    let sev = rule.and_then(|r| r.pointer("/properties/cvssV3_severity")).and_then(|s| s.as_str()).unwrap_or("unknown");
+                    match sev.to_uppercase().as_str() {
+                        "CRITICAL" => critical += 1, "HIGH" => high += 1,
+                        "MEDIUM" => medium += 1, _ => low += 1,
+                    }
+                    let pkg = result.pointer("/locations/0/logicalLocations/0/fullyQualifiedName").and_then(|s| s.as_str()).unwrap_or("");
+                    let desc = rule.and_then(|r| r.get("shortDescription").and_then(|d| d.get("text")).and_then(|t| t.as_str())).unwrap_or("");
+                    cves.push(serde_json::json!({
+                        "id": rule_id, "severity": sev, "package": pkg,
+                        "version": "", "fixed": "",
+                        "description": desc.chars().take(200).collect::<String>(),
+                    }));
+                }
             }
-            cves.push(serde_json::json!({
-                "id": v.get("cve_id").or(v.get("id")).and_then(|s| s.as_str()).unwrap_or(""),
-                "severity": sev,
-                "package": v.get("package_name").or(v.get("pkgName")).and_then(|s| s.as_str()).unwrap_or(""),
-                "version": v.get("package_version").or(v.get("installedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
-                "fixed": v.get("fixed_version").or(v.get("fixedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
-                "description": v.get("description").or(v.get("title")).and_then(|s| s.as_str()).unwrap_or("").chars().take(200).collect::<String>(),
-            }));
         }
     }
 

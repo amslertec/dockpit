@@ -1882,25 +1882,25 @@ pub async fn env_scan_single_image(
     }
 }
 
-/// Execute docker scout cves on a local image
+/// Execute docker scout cves on a local image (SARIF format)
 async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
     let output = tokio::process::Command::new("docker")
-        .args(["scout", "cves", "--format", "json", "--only-severity", "critical,high,medium,low", image])
+        .args(["scout", "cves", "--format", "sarif", image])
         .output()
         .await
         .map_err(|e| format!("docker scout not available: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("authentication required") || stderr.contains("login") || stderr.contains("unauthorized") {
+        if stderr.contains("authentication required") || stderr.contains("login") || stderr.contains("unauthorized") || stderr.contains("denied") {
             return Err("Docker Hub login required. Please add Docker Hub credentials in Settings → Docker Login.".into());
         }
         return Err(format!("Scan failed: {}", stderr.chars().take(200).collect::<String>()));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|_| "Failed to parse scout output".to_string())?;
+    let sarif: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|_| "Failed to parse scout SARIF output".to_string())?;
 
     let mut critical = 0i32;
     let mut high = 0i32;
@@ -1908,25 +1908,53 @@ async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
     let mut low = 0i32;
     let mut cves = Vec::new();
 
-    // Parse docker scout JSON output
-    if let Some(vulns) = json.pointer("/vulnerabilities").and_then(|v| v.as_array()) {
-        for v in vulns {
-            let severity = v.get("severity").and_then(|s| s.as_str()).unwrap_or("");
-            match severity.to_lowercase().as_str() {
-                "critical" => critical += 1,
-                "high" => high += 1,
-                "medium" => medium += 1,
-                "low" => low += 1,
-                _ => {}
+    // Parse SARIF format: runs[0].tool.driver.rules has CVE details, runs[0].results has findings
+    if let Some(runs) = sarif.get("runs").and_then(|r| r.as_array()) {
+        if let Some(run) = runs.first() {
+            // Build rules lookup (CVE details)
+            let rules: std::collections::HashMap<String, &serde_json::Value> = run
+                .pointer("/tool/driver/rules")
+                .and_then(|r| r.as_array())
+                .map(|arr| arr.iter().filter_map(|r| r.get("id").and_then(|id| id.as_str()).map(|id| (id.to_string(), r))).collect())
+                .unwrap_or_default();
+
+            // Parse results
+            if let Some(results) = run.get("results").and_then(|r| r.as_array()) {
+                for result in results {
+                    let rule_id = result.get("ruleId").and_then(|r| r.as_str()).unwrap_or("");
+                    let rule = rules.get(rule_id);
+
+                    let severity = rule
+                        .and_then(|r| r.pointer("/properties/cvssV3_severity"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("unknown");
+
+                    match severity.to_uppercase().as_str() {
+                        "CRITICAL" => critical += 1,
+                        "HIGH" => high += 1,
+                        "MEDIUM" => medium += 1,
+                        "LOW" => low += 1,
+                        _ => low += 1,
+                    }
+
+                    // Extract package info from locations
+                    let package = result.pointer("/locations/0/logicalLocations/0/fullyQualifiedName")
+                        .and_then(|s| s.as_str()).unwrap_or("");
+                    let description = rule
+                        .and_then(|r| r.get("shortDescription").and_then(|d| d.get("text")).and_then(|t| t.as_str()))
+                        .or_else(|| rule.and_then(|r| r.get("helpUri").and_then(|u| u.as_str())))
+                        .unwrap_or("");
+
+                    cves.push(serde_json::json!({
+                        "id": rule_id,
+                        "severity": severity,
+                        "package": package,
+                        "version": "",
+                        "fixed": "",
+                        "description": description.chars().take(200).collect::<String>(),
+                    }));
+                }
             }
-            cves.push(serde_json::json!({
-                "id": v.get("cve_id").or_else(|| v.get("id")).and_then(|s| s.as_str()).unwrap_or(""),
-                "severity": severity,
-                "package": v.get("package_name").or_else(|| v.get("pkgName")).and_then(|s| s.as_str()).unwrap_or(""),
-                "version": v.get("package_version").or_else(|| v.get("installedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
-                "fixed": v.get("fixed_version").or_else(|| v.get("fixedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
-                "description": v.get("description").or_else(|| v.get("title")).and_then(|s| s.as_str()).unwrap_or("").chars().take(200).collect::<String>(),
-            }));
         }
     }
 

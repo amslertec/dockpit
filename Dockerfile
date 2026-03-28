@@ -56,9 +56,9 @@ COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-pl
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
 # Install Docker Scout CLI plugin
-RUN curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh -o /tmp/install-scout.sh \
-    && sh /tmp/install-scout.sh \
-    && rm /tmp/install-scout.sh
+ARG SCOUT_VERSION=v1.20.3
+RUN curl -fsSL "https://github.com/docker/scout-cli/releases/download/${SCOUT_VERSION}/docker-scout_${SCOUT_VERSION#v}_linux_amd64.tar.gz" \
+    | tar xz -C /usr/libexec/docker/cli-plugins docker-scout
 
 COPY --from=builder /app/target/release/dockpit-server /usr/local/bin/dockpit-server
 
