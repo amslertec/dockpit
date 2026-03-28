@@ -637,4 +637,23 @@ export const de: Record<string, string> = {
 	'favorites.noFavoritesDesc': 'Klicke auf das Stern-Icon bei einem Container um ihn hier anzupinnen',
 	'favorites.pin': 'Anpinnen',
 	'favorites.unpin': 'Entfernen',
+
+	// === Dashboard Customization ===
+	'dashboard.note': 'Notiz',
+	'dashboard.links': 'Lesezeichen',
+	'dashboard.clock': 'Uhr',
+	'dashboard.iframe': 'Einbetten',
+	'dashboard.addTab': 'Tab hinzufügen',
+	'dashboard.renameTab': 'Umbenennen',
+	'dashboard.deleteTab': 'Tab löschen',
+	'dashboard.export': 'Exportieren',
+	'dashboard.import': 'Importieren',
+	'dashboard.imported': 'Dashboard importiert',
+	'dashboard.importError': 'Ungültige Dashboard-Datei',
+	'dashboard.defaultTab': 'Dashboard',
+	'dashboard.newTab': 'Neuer Tab',
+	'dashboard.enterUrl': 'URL eingeben...',
+	'dashboard.addLink': 'Link hinzufügen',
+	'dashboard.linkTitle': 'Titel',
+	'dashboard.linkUrl': 'URL',
 };

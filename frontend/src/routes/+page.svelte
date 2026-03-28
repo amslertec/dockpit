@@ -2,7 +2,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { environments } from '$lib/stores/environment';
-	import { widgets, type WidgetConfig } from '$lib/stores/widgets';
+	import { widgets, type WidgetConfig, getTabs, addTab, renameTab, removeTab, exportDashboard, importDashboard, type DashboardTab } from '$lib/stores/widgets';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -17,6 +17,10 @@
 	import QuickActionsWidget from '$lib/components/widgets/QuickActionsWidget.svelte';
 	import ResourceMonitorWidget from '$lib/components/widgets/ResourceMonitorWidget.svelte';
 	import FavoritesWidget from '$lib/components/widgets/FavoritesWidget.svelte';
+	import NoteWidget from '$lib/components/widgets/NoteWidget.svelte';
+	import LinksWidget from '$lib/components/widgets/LinksWidget.svelte';
+	import ClockWidget from '$lib/components/widgets/ClockWidget.svelte';
+	import IframeWidget from '$lib/components/widgets/IframeWidget.svelte';
 	import type { ServerOverview, SystemInfo } from '$lib/api/types';
 
 	let servers = $state<ServerOverview[]>([]);
@@ -27,6 +31,31 @@
 	let addMenuStyle = $state('');
 	let gridEl: HTMLElement;
 	let grid: any = null;
+	let tabs = $state<DashboardTab[]>(getTabs());
+	let activeTabId = $state(getTabs()[0]?.id || 'default');
+	let renamingTabId = $state<string | null>(null);
+	let renameInput = $state('');
+	let importFileEl: HTMLInputElement;
+
+	const widgetColors = [
+		{ name: 'default', value: '' },
+		{ name: 'red', value: 'var(--red)' },
+		{ name: 'green', value: 'var(--green)' },
+		{ name: 'yellow', value: 'var(--yellow)' },
+		{ name: 'purple', value: 'var(--purple)' },
+		{ name: 'cyan', value: '#22d3ee' },
+		{ name: 'orange', value: '#ff8a5c' },
+		{ name: 'pink', value: '#f472b6' },
+	];
+
+	const customTypes = [
+		{ type: 'note', label: $t('dashboard.note'), icon: '\u{1F4DD}' },
+		{ type: 'links', label: $t('dashboard.links'), icon: '\u{1F517}' },
+		{ type: 'clock', label: $t('dashboard.clock'), icon: '\u{1F550}' },
+		{ type: 'iframe', label: $t('dashboard.iframe'), icon: '\u{1F5BC}' },
+	];
+
+	const filteredWidgets = $derived($widgets.filter(w => (w.tabId || 'default') === activeTabId));
 
 	function positionAddMenu() {
 		const anchor = document.getElementById('add-widget-anchor');
@@ -55,7 +84,7 @@
 
 	function widgetTitle(w: WidgetConfig): string {
 		if (w.type === 'server') return getServer(w.envId)?.name || $t('home.servers');
-		const found = singletonTypes.find(s => s.type === w.type);
+		const found = singletonTypes.find(s => s.type === w.type) || customTypes.find(s => s.type === w.type);
 		return found?.label || 'Widget';
 	}
 
@@ -112,9 +141,10 @@
 
 	function loadWidgetsToGrid() {
 		if (!grid) return;
+		const tabWidgets = $widgets.filter(w => (w.tabId || 'default') === activeTabId);
 		grid.batchUpdate();
 		grid.removeAll(false);
-		for (const w of $widgets) {
+		for (const w of tabWidgets) {
 			const el = document.getElementById(`widget-${w.id}`);
 			if (el) {
 				grid.makeWidget(el, { x: w.x, y: w.y, w: w.w, h: w.h, id: w.id });
@@ -166,7 +196,7 @@
 
 	async function addWidget(type: string, envId?: string) {
 		showAddMenu = false;
-		widgets.addWidget(type as any, envId);
+		widgets.addWidget(type as any, envId, activeTabId);
 		hasUnsavedChanges = true;
 		await rebuildGrid();
 	}
@@ -189,6 +219,73 @@
 		await tick();
 		await tick();
 		initGrid();
+	}
+
+	async function handleAddTab() {
+		const tab = addTab($t('dashboard.newTab'));
+		tabs = getTabs();
+		activeTabId = tab.id;
+		await rebuildGrid();
+	}
+
+	function startRenameTab(tabId: string, currentName: string) {
+		renamingTabId = tabId;
+		renameInput = currentName;
+	}
+
+	async function finishRenameTab() {
+		if (renamingTabId && renameInput.trim()) {
+			renameTab(renamingTabId, renameInput.trim());
+			tabs = getTabs();
+		}
+		renamingTabId = null;
+		renameInput = '';
+	}
+
+	async function handleRemoveTab(tabId: string) {
+		removeTab(tabId);
+		tabs = getTabs();
+		if (activeTabId === tabId) {
+			activeTabId = tabs[0]?.id || 'default';
+		}
+		await rebuildGrid();
+	}
+
+	async function switchTab(tabId: string) {
+		if (tabId === activeTabId) return;
+		activeTabId = tabId;
+		await rebuildGrid();
+	}
+
+	function handleExport() {
+		const json = exportDashboard();
+		const blob = new Blob([json], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `dockpit-dashboard-${Date.now()}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function handleImport(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		const text = await file.text();
+		if (importDashboard(text)) {
+			tabs = getTabs();
+			activeTabId = tabs[0]?.id || 'default';
+			toasts.success($t('dashboard.imported'));
+			await rebuildGrid();
+		} else {
+			toasts.error($t('dashboard.importError'));
+		}
+		input.value = '';
+	}
+
+	function setWidgetColor(widgetId: string, color: string) {
+		widgets.updateWidget(widgetId, { color });
 	}
 </script>
 
@@ -246,6 +343,36 @@
 		from { opacity: 0; transform: translateY(-8px) scale(0.96); }
 		to { opacity: 1; transform: translateY(0) scale(1); }
 	}
+	.tab-bar {
+		background: var(--glass-bg);
+		backdrop-filter: blur(16px) saturate(150%);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+	}
+	.tab-item {
+		padding: 6px 14px;
+		font-size: 11px;
+		font-weight: 500;
+		border-radius: var(--radius);
+		transition: all 0.15s;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.tab-item:hover { background: var(--bg-hover); }
+	.tab-item.active {
+		background: var(--accent-bg);
+		color: var(--accent);
+	}
+	.color-dot {
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.color-dot:hover { transform: scale(1.2); }
+	.color-dot.selected { border-color: var(--text); }
 </style>
 
 {#if loading}
@@ -281,6 +408,15 @@
 									</button>
 								{/if}
 							{/each}
+							<div class="border-t border-[var(--border)] my-1.5"></div>
+							<div class="px-3 py-1.5 text-[10px] text-[var(--text-muted)] uppercase tracking-[0.15em] font-semibold">Custom</div>
+							{#each customTypes as cw}
+								<button class="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-[var(--text)] hover:bg-[var(--bg-hover)] transition-all text-left"
+									onclick={() => addWidget(cw.type)}>
+									<span class="text-sm">{cw.icon}</span>
+									{cw.label}
+								</button>
+							{/each}
 							{#if availableServers.length > 0}
 								<div class="border-t border-[var(--border)] my-1.5"></div>
 								<div class="px-3 py-1.5 text-[10px] text-[var(--text-muted)] uppercase tracking-[0.15em] font-semibold">{$t('home.servers')}</div>
@@ -299,6 +435,15 @@
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 					{$t('home.resetLayout')}
 				</Button>
+				<Button variant="secondary" size="sm" onclick={handleExport}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+					{$t('dashboard.export')}
+				</Button>
+				<Button variant="secondary" size="sm" onclick={() => importFileEl?.click()}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+					{$t('dashboard.import')}
+				</Button>
+				<input type="file" accept=".json" class="hidden" bind:this={importFileEl} onchange={handleImport} />
 				<Button variant="primary" size="sm" onclick={saveDashboard}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
 					{$t('home.saveLayout')}
@@ -323,11 +468,51 @@
 		</div>
 	{/if}
 
+	<!-- Tab Bar -->
+	<div class="tab-bar flex items-center gap-1 px-2 py-1.5 mb-4 overflow-x-auto">
+		{#each tabs as tab}
+			{#if renamingTabId === tab.id}
+				<input
+					type="text"
+					class="tab-item bg-[var(--bg-2)] border border-[var(--accent)] text-[var(--text)] text-[11px] px-2 py-1 rounded-[var(--radius)] w-28 focus:outline-none"
+					bind:value={renameInput}
+					onblur={finishRenameTab}
+					onkeydown={(e) => { if (e.key === 'Enter') finishRenameTab(); if (e.key === 'Escape') { renamingTabId = null; } }}
+				/>
+			{:else}
+				<button
+					class="tab-item text-[var(--text)] {tab.id === activeTabId ? 'active' : ''} flex items-center gap-1.5"
+					onclick={() => switchTab(tab.id)}
+					ondblclick={() => { if (editMode) startRenameTab(tab.id, tab.name); }}
+				>
+					{tab.name}
+					{#if editMode && tabs.length > 1}
+						<span
+							class="w-4 h-4 flex items-center justify-center rounded-full text-[var(--text-muted)] hover:text-[var(--red)] hover:bg-[var(--red-bg)] transition ml-1"
+							onclick={(e) => { e.stopPropagation(); handleRemoveTab(tab.id); }}
+						>
+							<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</span>
+					{/if}
+				</button>
+			{/if}
+		{/each}
+		{#if editMode}
+			<button
+				class="tab-item text-[var(--text-muted)] hover:text-[var(--accent)] flex items-center gap-1"
+				onclick={handleAddTab}
+			>
+				<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				{$t('dashboard.addTab')}
+			</button>
+		{/if}
+	</div>
+
 	<!-- Grid -->
 	<div class="grid-stack {editMode ? 'edit-mode' : ''}" bind:this={gridEl}>
-		{#each $widgets as w (w.id)}
+		{#each filteredWidgets as w (w.id)}
 			<div class="grid-stack-item" id="widget-{w.id}" gs-id={w.id} gs-x={w.x} gs-y={w.y} gs-w={w.w} gs-h={w.h} gs-min-w="1" gs-min-h="2">
-				<div class="grid-stack-item-content">
+				<div class="grid-stack-item-content" style={w.color ? `border-left: 3px solid ${w.color}` : ''}>
 					<!-- Widget Header -->
 					<div class="widget-drag flex items-center justify-between px-3.5 py-2.5 border-b border-[var(--border)] shrink-0 {editMode ? 'cursor-grab active:cursor-grabbing bg-[var(--bg-3)]' : 'bg-transparent'}">
 						<div class="flex items-center gap-2">
@@ -341,10 +526,22 @@
 							<span class="text-[11px] font-semibold text-[var(--text)]">{widgetTitle(w)}</span>
 						</div>
 						{#if editMode}
-							<button onclick={() => removeWidget(w.id)} title={$t('common.delete')}
-								class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--red)] hover:bg-[var(--red-bg)] transition-all">
-								<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
+							<div class="flex items-center gap-1.5">
+								<div class="flex items-center gap-0.5">
+									{#each widgetColors as c}
+										<button
+											class="color-dot {(w.color || '') === c.value ? 'selected' : ''}"
+											style="background: {c.value || 'var(--accent)'};"
+											title={c.name}
+											onclick={(e) => { e.stopPropagation(); setWidgetColor(w.id, c.value); }}
+										></button>
+									{/each}
+								</div>
+								<button onclick={() => removeWidget(w.id)} title={$t('common.delete')}
+									class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--text-muted)] hover:text-[var(--red)] hover:bg-[var(--red-bg)] transition-all">
+									<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								</button>
+							</div>
 						{/if}
 					</div>
 					<!-- Widget Content -->
@@ -372,6 +569,14 @@
 							<ResourceMonitorWidget />
 						{:else if w.type === 'favorites'}
 							<FavoritesWidget />
+						{:else if w.type === 'note'}
+							<NoteWidget widgetId={w.id} />
+						{:else if w.type === 'links'}
+							<LinksWidget widgetId={w.id} />
+						{:else if w.type === 'clock'}
+							<ClockWidget />
+						{:else if w.type === 'iframe'}
+							<IframeWidget widgetId={w.id} />
 						{/if}
 					</div>
 				</div>
@@ -379,7 +584,7 @@
 		{/each}
 	</div>
 
-	{#if $widgets.length === 0}
+	{#if filteredWidgets.length === 0}
 		<div class="empty-state rounded-[var(--radius-xl)] p-12 text-center mt-4">
 			<svg class="w-14 h-14 mx-auto mb-4 opacity-20 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 				<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
