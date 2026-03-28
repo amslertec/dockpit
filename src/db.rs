@@ -2,7 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo};
+use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo, ContainerEvent};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -99,6 +99,18 @@ impl Database {
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS container_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                env_id TEXT NOT NULL,
+                container_id TEXT,
+                container_name TEXT,
+                event_type TEXT NOT NULL,
+                event_action TEXT NOT NULL,
+                details TEXT,
+                timestamp TEXT NOT NULL,
+                UNIQUE(env_id, container_id, event_action, timestamp)
             );
 
             CREATE TABLE IF NOT EXISTS notifications (
@@ -514,6 +526,42 @@ impl Database {
             params![result, message, next_run, id],
         )?;
         Ok(())
+    }
+
+    // === Container Events ===
+
+    pub fn save_events(&self, events: &[ContainerEvent]) {
+        let conn = self.conn.lock().unwrap();
+        for e in events {
+            conn.execute(
+                "INSERT OR IGNORE INTO container_events (env_id, container_id, container_name, event_type, event_action, details, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![e.env_id, e.container_id, e.container_name, e.event_type, e.event_action, e.details, e.timestamp],
+            ).ok();
+        }
+    }
+
+    pub fn get_events(&self, env_id: &str, limit: i64, offset: i64) -> Vec<ContainerEvent> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, env_id, container_id, container_name, event_type, event_action, details, timestamp FROM container_events WHERE env_id = ?1 ORDER BY timestamp DESC LIMIT ?2 OFFSET ?3"
+        ).unwrap();
+        stmt.query_map(params![env_id, limit, offset], |row| {
+            Ok(ContainerEvent {
+                id: row.get(0)?, env_id: row.get(1)?, container_id: row.get(2)?,
+                container_name: row.get(3)?, event_type: row.get(4)?,
+                event_action: row.get(5)?, details: row.get(6)?, timestamp: row.get(7)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_events_count(&self, env_id: &str) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM container_events WHERE env_id = ?1", params![env_id], |row| row.get(0)).unwrap_or(0)
+    }
+
+    pub fn cleanup_old_events(&self) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM container_events WHERE timestamp < datetime('now', '-7 days')", []).ok();
     }
 
     // === Notifications ===

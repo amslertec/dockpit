@@ -1769,6 +1769,78 @@ pub async fn remove_registry(
     }
 }
 
+// === Container Events ===
+
+pub async fn env_get_events(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<EventsResponse>> {
+    let limit = query.get("limit").and_then(|v| v.parse().ok()).unwrap_or(50i64);
+    let offset = query.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0i64);
+    let events = state.db.get_events(&env_id, limit, offset);
+    let total = state.db.get_events_count(&env_id);
+    Json(ApiResponse::ok(EventsResponse { events, total }))
+}
+
+pub async fn env_refresh_events(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+
+    let events = if env.is_local {
+        let mut evts = state.docker.get_recent_events(3600).await;
+        for e in &mut evts { e.env_id = env_id.clone(); }
+        evts
+    } else {
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
+        let url = format!("{}/api/events?since=3600", env.url);
+        match client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+            Ok(resp) => {
+                let mut evts: Vec<ContainerEvent> = resp.json::<ApiResponse<Vec<ContainerEvent>>>().await
+                    .ok().and_then(|r| r.data).unwrap_or_default();
+                for e in &mut evts { e.env_id = env_id.clone(); }
+                evts
+            }
+            Err(_) => vec![],
+        }
+    };
+
+    let count = events.len();
+    state.db.save_events(&events);
+    Json(ApiResponse::ok(format!("{} events collected", count)))
+}
+
+/// Background: collect events from all environments
+pub async fn collect_all_events(state: Arc<AppState>) {
+    let envs = state.db.get_environments();
+    for env in &envs {
+        let events = if env.is_local {
+            let mut evts = state.docker.get_recent_events(300).await; // last 5 min
+            for e in &mut evts { e.env_id = env.id.clone(); }
+            evts
+        } else {
+            let client = reqwest::Client::builder().timeout(Duration::from_secs(15)).build().unwrap();
+            let url = format!("{}/api/events?since=300", env.url);
+            match client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+                Ok(resp) => {
+                    let mut evts: Vec<ContainerEvent> = resp.json::<ApiResponse<Vec<ContainerEvent>>>().await
+                        .ok().and_then(|r| r.data).unwrap_or_default();
+                    for e in &mut evts { e.env_id = env.id.clone(); }
+                    evts
+                }
+                Err(_) => vec![],
+            }
+        };
+        state.db.save_events(&events);
+    }
+    state.db.cleanup_old_events();
+}
+
 // === Notifications ===
 
 pub async fn get_notifications(

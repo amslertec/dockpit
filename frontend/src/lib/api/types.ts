@@ -253,3 +253,21 @@ export interface ScheduledJob {
 	last_result?: string;
 	last_message?: string;
 }
+
+// === Container Events ===
+
+export interface ContainerEvent {
+	id?: number;
+	env_id: string;
+	container_id?: string;
+	container_name?: string;
+	event_type: string;
+	event_action: string;
+	details?: string;
+	timestamp: string;
+}
+
+export interface EventsResponse {
+	events: ContainerEvent[];
+	total: number;
+}

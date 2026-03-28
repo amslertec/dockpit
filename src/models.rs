@@ -349,6 +349,26 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Container Event Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerEvent {
+    pub id: Option<i64>,
+    pub env_id: String,
+    pub container_id: Option<String>,
+    pub container_name: Option<String>,
+    pub event_type: String,
+    pub event_action: String,
+    pub details: Option<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventsResponse {
+    pub events: Vec<ContainerEvent>,
+    pub total: i64,
+}
+
 // === Notification Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

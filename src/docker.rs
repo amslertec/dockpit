@@ -1,5 +1,6 @@
 use bollard::Docker;
 use bollard::container::{ListContainersOptions, LogsOptions, StartContainerOptions, StopContainerOptions, RemoveContainerOptions, StatsOptions};
+use bollard::system::EventsOptions;
 use bollard::image::{ListImagesOptions, RemoveImageOptions};
 use bollard::volume::ListVolumesOptions;
 use bollard::network::ListNetworksOptions;
@@ -503,6 +504,53 @@ impl DockerClient {
             status: "online".into(),
             server_type: "Standalone".into(),
         }
+    }
+
+    pub async fn get_recent_events(&self, since_secs: i64) -> Vec<ContainerEvent> {
+        let since = chrono::Utc::now().timestamp() - since_secs;
+        let until = chrono::Utc::now().timestamp();
+
+        let mut filters = HashMap::new();
+        filters.insert("type".to_string(), vec!["container".to_string()]);
+
+        let options = EventsOptions {
+            since: Some(since.to_string()),
+            until: Some(until.to_string()),
+            filters,
+        };
+
+        let mut stream = self.docker.events(Some(options));
+        let mut events = Vec::new();
+
+        while let Some(Ok(event)) = stream.next().await {
+            let action = event.action.unwrap_or_default();
+            let actor = event.actor.unwrap_or_default();
+            let container_id = actor.id.unwrap_or_default();
+            let container_name = actor.attributes.as_ref()
+                .and_then(|a| a.get("name"))
+                .cloned()
+                .unwrap_or_default();
+            let image = actor.attributes.as_ref()
+                .and_then(|a| a.get("image"))
+                .cloned();
+            let ts = event.time.unwrap_or(0);
+            let timestamp = chrono::DateTime::from_timestamp(ts, 0)
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_default();
+
+            events.push(ContainerEvent {
+                id: None,
+                env_id: String::new(), // filled by caller
+                container_id: Some(container_id),
+                container_name: Some(container_name),
+                event_type: "container".into(),
+                event_action: action,
+                details: image,
+                timestamp,
+            });
+        }
+
+        events
     }
 
     pub async fn get_all_container_stats(&self) -> Vec<ContainerStats> {

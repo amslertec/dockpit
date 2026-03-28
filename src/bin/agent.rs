@@ -1181,6 +1181,45 @@ async fn agent_handle_terminal(
 #[derive(Debug, Serialize, Deserialize)]
 struct DiskUsageInfo { images_size: f64, containers_size: f64, volumes_size: f64, build_cache_size: f64, total_size: f64 }
 
+async fn agent_get_events(
+    State(state): State<Arc<AgentState>>,
+    headers: HeaderMap,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+    state.check_auth(&headers)?;
+    let since_secs: i64 = query.get("since").and_then(|v| v.parse().ok()).unwrap_or(3600);
+    let since = chrono::Utc::now().timestamp() - since_secs;
+    let until = chrono::Utc::now().timestamp();
+
+    let mut filters = std::collections::HashMap::new();
+    filters.insert("type".to_string(), vec!["container".to_string()]);
+
+    use bollard::system::EventsOptions;
+    let options = EventsOptions { since: Some(since.to_string()), until: Some(until.to_string()), filters };
+    let mut stream = state.docker.events(Some(options));
+    let mut events = Vec::new();
+
+    while let Some(Ok(event)) = futures_lite::StreamExt::next(&mut stream).await {
+        let action = event.action.unwrap_or_default();
+        let actor = event.actor.unwrap_or_default();
+        let cid = actor.id.unwrap_or_default();
+        let cname = actor.attributes.as_ref().and_then(|a| a.get("name")).cloned().unwrap_or_default();
+        let image = actor.attributes.as_ref().and_then(|a| a.get("image")).cloned();
+        let ts = event.time.unwrap_or(0);
+        let timestamp = chrono::DateTime::from_timestamp(ts, 0)
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default();
+
+        events.push(serde_json::json!({
+            "env_id": "", "container_id": cid, "container_name": cname,
+            "event_type": "container", "event_action": action,
+            "details": image, "timestamp": timestamp,
+        }));
+    }
+
+    Ok(Json(ApiResponse::ok(events)))
+}
+
 async fn disk_usage(State(state): State<Arc<AgentState>>, headers: HeaderMap) -> Result<Json<ApiResponse<DiskUsageInfo>>, StatusCode> {
     state.check_auth(&headers)?;
     let df = state.docker.df().await;
@@ -1312,6 +1351,7 @@ async fn main() {
         .route("/api/networks/{id}", delete(remove_network))
         .route("/api/disk-usage", get(disk_usage))
         .route("/api/system", get(system_info))
+        .route("/api/events", get(agent_get_events))
         // Stacks
         .route("/api/stacks", get(agent_list_stacks))
         .route("/api/stacks", post(agent_create_stack))

@@ -132,8 +132,14 @@ async fn main() {
     let scheduler_state = state.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        let mut tick = 0u64;
         loop {
             handlers::run_due_jobs(scheduler_state.clone()).await;
+            // Collect Docker events every 5 minutes (every 5th tick)
+            if tick % 5 == 0 {
+                handlers::collect_all_events(scheduler_state.clone()).await;
+            }
+            tick += 1;
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
     });
@@ -160,6 +166,8 @@ async fn main() {
         .route("/api/env/{env_id}/stats", get(handlers::env_stats))
         .route("/api/env/{env_id}/containers", get(handlers::env_containers))
         .route("/api/env/{env_id}/containers/{container_id}/logs", get(handlers::env_container_logs))
+        .route("/api/env/{env_id}/events", get(handlers::env_get_events))
+        .route("/api/env/{env_id}/events/refresh", post(handlers::env_refresh_events))
         .route("/api/notifications", get(handlers::get_notifications))
         .route("/api/notifications/unread-count", get(handlers::get_unread_count))
         .route("/api/notifications/{id}/read", post(handlers::mark_notification_read))
