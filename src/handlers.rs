@@ -312,6 +312,10 @@ fn audit_user(headers: &axum::http::HeaderMap) -> String {
         .unwrap_or_else(|| "system".to_string())
 }
 
+fn env_name(state: &AppState, env_id: &str) -> String {
+    state.db.get_environment(env_id).map(|e| e.name).unwrap_or_else(|| env_id.to_string())
+}
+
 // === User Management (super_admin only) ===
 
 pub async fn list_users(
@@ -891,7 +895,14 @@ pub async fn env_container_action(
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
 
-    state.db.log_audit(&audit_user(&headers), "container_action", Some(&container_id), Some(&action.action));
+    // Get container name for audit log
+    let container_name = if env.is_local {
+        state.docker.inspect_container(&container_id).await.ok()
+            .and_then(|c| c.name).map(|n| n.trim_start_matches('/').to_string())
+            .unwrap_or_else(|| container_id[..12.min(container_id.len())].to_string())
+    } else { container_id[..12.min(container_id.len())].to_string() };
+    let server = env_name(&state, &env_id);
+    state.db.log_audit(&audit_user(&headers), &format!("container_{}", action.action), Some(&container_name), Some(&format!("Server: {}", server)));
 
     if env.is_local {
         let result = match action.action.as_str() {
@@ -983,7 +994,7 @@ pub async fn env_recreate_container(
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
 
-    state.db.log_audit(&audit_user(&headers), "container_recreate", Some(&container_id), None);
+    let server = env_name(&state, &env_id);
 
     if env.is_local {
         // Check if it's a stack container
@@ -991,6 +1002,8 @@ pub async fn env_recreate_container(
             Ok(c) => c,
             Err(e) => return Json(ApiResponse::err(e.to_string())),
         };
+        let cname = inspect.name.as_ref().map(|n| n.trim_start_matches('/').to_string()).unwrap_or_else(|| container_id[..12.min(container_id.len())].to_string());
+        state.db.log_audit(&audit_user(&headers), "container_recreate", Some(&cname), Some(&format!("Server: {}", server)));
 
         let stack_name = inspect.config.as_ref()
             .and_then(|c| c.labels.as_ref())
@@ -1694,7 +1707,7 @@ pub async fn delete_environment(
 
     match state.db.delete_environment(&id) {
         Ok(_) => {
-            state.db.log_audit(&audit_user(&headers), "env_delete", Some(&id), None);
+            state.db.log_audit(&audit_user(&headers), "env_delete", Some(&env_name(&state, &id)), None);
             Json(ApiResponse::ok("Umgebung entfernt".to_string()))
         }
         Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
@@ -1848,7 +1861,7 @@ pub async fn env_scan_vulnerabilities(
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
 
-    state.db.log_audit(&audit_user(&headers), "vuln_scan", Some(&env_id), None);
+    state.db.log_audit(&audit_user(&headers), "vuln_scan", Some(&env_name(&state, &env_id)), None);
 
     let state_clone = state.clone();
     let env_id_clone = env_id.clone();
@@ -2373,7 +2386,7 @@ pub async fn env_create_stack(
     Json(req): Json<CreateStackRequest>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
-    state.db.log_audit(&audit_user(&headers), "stack_create", Some(&req.name), None);
+    state.db.log_audit(&audit_user(&headers), "stack_create", Some(&req.name), Some(&format!("Server: {}", env_name(&state, &env_id))));
     if env.is_local {
         match state.stacks.create_stack(&req) { Ok(_) => Json(ApiResponse::ok(format!("Stack '{}' erstellt", req.name))), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, "/api/stacks", &req).await }
@@ -2396,7 +2409,7 @@ pub async fn env_delete_stack(
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
-    state.db.log_audit(&audit_user(&headers), "stack_delete", Some(&name), None);
+    state.db.log_audit(&audit_user(&headers), "stack_delete", Some(&name), Some(&format!("Server: {}", env_name(&state, &env_id))));
     if env.is_local {
         match state.stacks.delete_stack(&name) { Ok(_) => Json(ApiResponse::ok("Gelöscht".into())), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_del(&env, &format!("/api/stacks/{}", name)).await }
@@ -2408,7 +2421,7 @@ pub async fn env_deploy_stack(
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
-    state.db.log_audit(&audit_user(&headers), "stack_deploy", Some(&name), None);
+    state.db.log_audit(&audit_user(&headers), "stack_deploy", Some(&name), Some(&format!("Server: {}", env_name(&state, &env_id))));
     if env.is_local {
         match state.stacks.deploy_stack(&name).await { Ok(o) => Json(ApiResponse::ok(o)), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, &format!("/api/stacks/{}/deploy", name), &()).await }
@@ -2420,7 +2433,7 @@ pub async fn env_stop_stack(
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
-    state.db.log_audit(&audit_user(&headers), "stack_stop", Some(&name), None);
+    state.db.log_audit(&audit_user(&headers), "stack_stop", Some(&name), Some(&format!("Server: {}", env_name(&state, &env_id))));
     if env.is_local {
         match state.stacks.stop_stack(&name).await { Ok(o) => Json(ApiResponse::ok(o)), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, &format!("/api/stacks/{}/stop", name), &()).await }
