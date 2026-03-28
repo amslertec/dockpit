@@ -18,6 +18,61 @@
 	let loading = $state(true);
 	let showPull = $state(false);
 	let pullName = $state('');
+	let searchResults = $state<{name: string; description: string; is_official: boolean; star_count: number}[]>([]);
+	let searchLoading = $state(false);
+	let showSuggestions = $state(false);
+	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+	let selectedIndex = $state(-1);
+
+	function onPullInput(val: string) {
+		pullName = val;
+		selectedIndex = -1;
+		if (searchTimeout) clearTimeout(searchTimeout);
+		if (val.length < 2 || val.includes(':')) {
+			searchResults = [];
+			showSuggestions = false;
+			return;
+		}
+		searchLoading = true;
+		showSuggestions = true;
+		searchTimeout = setTimeout(async () => {
+			try {
+				const resp = await fetch(`https://hub.docker.com/v2/search/repositories/?query=${encodeURIComponent(val)}&page_size=8`);
+				if (resp.ok) {
+					const data = await resp.json();
+					searchResults = (data.results || []).map((r: any) => ({
+						name: r.repo_name || r.name || '',
+						description: (r.short_description || r.description || '').substring(0, 80),
+						is_official: r.is_official || false,
+						star_count: r.star_count || 0,
+					}));
+				}
+			} catch {}
+			searchLoading = false;
+		}, 300);
+	}
+
+	function selectSuggestion(name: string) {
+		pullName = name + ':latest';
+		showSuggestions = false;
+		searchResults = [];
+	}
+
+	function handlePullKeydown(e: KeyboardEvent) {
+		if (!showSuggestions || searchResults.length === 0) return;
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			selectedIndex = (selectedIndex + 1) % searchResults.length;
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			selectedIndex = (selectedIndex - 1 + searchResults.length) % searchResults.length;
+		} else if (e.key === 'Enter' && selectedIndex >= 0) {
+			e.preventDefault();
+			selectSuggestion(searchResults[selectedIndex].name);
+		} else if (e.key === 'Escape') {
+			showSuggestions = false;
+		}
+	}
 	let pruning = $state(false);
 	let search = $state('');
 	let page = $state(1);
@@ -250,13 +305,57 @@
 </div>
 
 {#if showPull}
-	<Modal title={$t('images.pullTitle')} onclose={() => showPull = false}>
+	<Modal title={$t('images.pullTitle')} onclose={() => { showPull = false; showSuggestions = false; }}>
 		<form onsubmit={pull}>
-			<div class="mb-4">
-				<TextInput bind:value={pullName} placeholder="nginx:latest" required label="Image" id="pin" />
+			<div class="mb-4 relative">
+				<label for="pin" class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Image</label>
+				<input
+					id="pin"
+					type="text"
+					value={pullName}
+					oninput={(e) => onPullInput((e.target as HTMLInputElement).value)}
+					onkeydown={handlePullKeydown}
+					onfocus={() => { if (searchResults.length > 0) showSuggestions = true; }}
+					placeholder="nginx:latest"
+					required
+					autocomplete="off"
+					class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-3 py-2.5 text-[16px] md:text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200"
+				/>
+				{#if showSuggestions && (searchResults.length > 0 || searchLoading)}
+					<div class="absolute left-0 right-0 top-full mt-1 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 max-h-[280px] overflow-y-auto">
+						{#if searchLoading && searchResults.length === 0}
+							<div class="px-3 py-3 text-center">
+								<div class="w-4 h-4 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin mx-auto"></div>
+							</div>
+						{/if}
+						{#each searchResults as result, i}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="px-3 py-2.5 cursor-pointer transition-all duration-100 {i === selectedIndex ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)]'}"
+								onclick={() => selectSuggestion(result.name)}
+								onmouseenter={() => selectedIndex = i}
+							>
+								<div class="flex items-center gap-2">
+									<span class="text-sm font-medium text-[var(--text)]">{result.name}</span>
+									{#if result.is_official}
+										<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] font-medium">Official</span>
+									{/if}
+									{#if result.star_count > 0}
+										<span class="text-[10px] text-[var(--text-muted)] ml-auto">⭐ {result.star_count > 1000 ? Math.floor(result.star_count / 1000) + 'k' : result.star_count}</span>
+									{/if}
+								</div>
+								{#if result.description}
+									<div class="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">{result.description}</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<p class="text-[10px] text-[var(--text-muted)] mt-1.5">Docker Hub search — type to find images</p>
 			</div>
 			<div class="flex justify-end gap-2">
-				<Button variant="secondary" size="sm" type="button" onclick={() => showPull = false}>{$t('common.cancel')}</Button>
+				<Button variant="secondary" size="sm" type="button" onclick={() => { showPull = false; showSuggestions = false; }}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit">{$t('images.pull')}</Button>
 			</div>
 		</form>
