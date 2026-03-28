@@ -468,6 +468,7 @@ async fn fetch_platform_digest(registry: &str, repo: &str, tag: &str, creds: &[R
     if !resp.status().is_success() { return Err(format!("Registry returned {}", resp.status())); }
 
     let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let head_digest = resp.headers().get("docker-content-digest").and_then(|v| v.to_str().ok()).map(|s| s.to_string()).unwrap_or_default();
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
 
     if content_type.contains("manifest.list") || content_type.contains("image.index") {
@@ -479,8 +480,7 @@ async fn fetch_platform_digest(registry: &str, repo: &str, tag: &str, creds: &[R
         }).ok_or("No linux/amd64 manifest")?;
         amd64["digest"].as_str().map(|s| s.to_string()).ok_or_else(|| "No digest".into())
     } else {
-        resp.headers().get("docker-content-digest").and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()).ok_or_else(|| "No digest".into())
+        if head_digest.is_empty() { Err("No digest".into()) } else { Ok(head_digest) }
     }
 }
 
