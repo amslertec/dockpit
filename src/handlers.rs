@@ -612,33 +612,48 @@ pub async fn run_update_check(
                 }
             };
 
-            for container in &containers {
-                if container.state != "running" { continue; }
+            // Check all containers in parallel (much faster than sequential)
+            let running: Vec<_> = containers.iter().filter(|c| c.state == "running").collect();
+            let creds: Vec<_> = state_clone.db.get_all_registry_credentials()
+                .into_iter()
+                .map(|(r, u, p)| serde_json::json!({"registry": r, "username": u, "password": p}))
+                .collect();
+            let creds_json = serde_json::json!({ "credentials": creds });
 
-                let check = if env.is_local {
-                    state_clone.docker.check_image_update(&container.image).await
-                        .ok().map(|(o, c, l)| (o, c, l, container.image.clone()))
-                } else {
-                    let url = format!("{}/api/containers/{}/check-update", env.url, container.id);
-                    let creds: Vec<_> = state_clone.db.get_all_registry_credentials()
-                        .into_iter()
-                        .map(|(r, u, p)| serde_json::json!({"registry": r, "username": u, "password": p}))
-                        .collect();
-                    let body = serde_json::json!({ "credentials": creds });
-                    match client.post(&url)
-                        .header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
-                        .json(&body).send().await
-                    {
-                        Ok(resp) => resp.json::<ApiResponse<ImageUpdateCheck>>().await
-                            .ok().and_then(|r| r.data)
-                            .map(|c| (c.outdated, c.current_id, c.latest_id, c.image)),
-                        Err(_) => None,
-                    }
-                };
+            let mut handles = Vec::new();
+            for container in &running {
+                let state_ref = state_clone.clone();
+                let env_ref = env.clone();
+                let client_ref = client.clone();
+                let creds_body = creds_json.clone();
+                let cname = container.name.clone();
+                let cimage = container.image.clone();
+                let cid_str = container.id.clone();
 
-                if let Some((outdated, cid, lid, image)) = check {
+                handles.push(tokio::spawn(async move {
+                    let check = if env_ref.is_local {
+                        state_ref.docker.check_image_update(&cimage).await
+                            .ok().map(|(o, c, l)| (o, c, l, cimage.clone()))
+                    } else {
+                        let url = format!("{}/api/containers/{}/check-update", env_ref.url, cid_str);
+                        match client_ref.post(&url)
+                            .header("X-Agent-Token", env_ref.agent_token.as_deref().unwrap_or(""))
+                            .json(&creds_body).send().await
+                        {
+                            Ok(resp) => resp.json::<ApiResponse<ImageUpdateCheck>>().await
+                                .ok().and_then(|r| r.data)
+                                .map(|c| (c.outdated, c.current_id, c.latest_id, c.image)),
+                            Err(_) => None,
+                        }
+                    };
+                    (cname, check)
+                }));
+            }
+
+            for handle in handles {
+                if let Ok((cname, Some((outdated, cid, lid, image)))) = handle.await {
                     state_clone.db.save_update_check(
-                        &container.name, &image, &env.name, &env.id,
+                        &cname, &image, &env.name, &env.id,
                         outdated, Some(&cid), Some(&lid),
                     ).ok();
                 }
