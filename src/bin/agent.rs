@@ -1193,6 +1193,11 @@ async fn agent_get_events(
 
     let mut filters = std::collections::HashMap::new();
     filters.insert("type".to_string(), vec!["container".to_string()]);
+    filters.insert("event".to_string(), vec![
+        "start".to_string(), "stop".to_string(), "die".to_string(),
+        "kill".to_string(), "restart".to_string(), "oom".to_string(),
+        "destroy".to_string(), "health_status".to_string(),
+    ]);
 
     use bollard::system::EventsOptions;
     let options = EventsOptions { since: Some(since.to_string()), until: Some(until.to_string()), filters };

@@ -562,6 +562,8 @@ impl Database {
     pub fn cleanup_old_events(&self) {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM container_events WHERE timestamp < datetime('now', '-7 days')", []).ok();
+        // Remove noisy events that aren't useful
+        conn.execute("DELETE FROM container_events WHERE event_action NOT IN ('start', 'stop', 'die', 'kill', 'restart', 'oom', 'destroy', 'health_status')", []).ok();
     }
 
     // === Notifications ===
