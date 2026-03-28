@@ -24,6 +24,15 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Grouped Results** — Categories with icons and status badges
 - **Instant Navigation** — Jump to any page or resource in seconds
 
+### Vulnerability Scanner (Docker Scout)
+- **Image CVE Scanning** — Scan all container images for known vulnerabilities using Docker Scout
+- **SARIF Output Parsing** — Extracts CVE ID, severity, package, fixed version, description
+- **Per-Image Results** — Expandable rows with CVE details, clickable links to NVD
+- **Severity Summary** — Critical, High, Medium, Low counts with color coding
+- **Scan History** — Up to 10 scans per image for trend tracking
+- **Live Updates** — Results appear in real-time during active scans
+- **Requires Docker Hub Login** — Free Personal plan sufficient (info banner on page)
+
 ### Container Event Log
 - **Live Timeline** — Real-time container events: start, stop, restart, OOM
 - **Dedicated /events Page** — Under "Management" in sidebar
