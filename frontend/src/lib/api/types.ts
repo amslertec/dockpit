@@ -290,6 +290,17 @@ export interface AuditResponse {
 
 // === Vulnerability Scanning ===
 
+export interface StackTemplate {
+	id: string;
+	name: string;
+	description?: string;
+	category: string;
+	compose_content: string;
+	env_content?: string;
+	icon?: string;
+	is_default: boolean;
+}
+
 export interface VulnerabilityScan {
 	id?: number;
 	env_id: string;

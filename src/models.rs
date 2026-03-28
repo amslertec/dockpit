@@ -349,6 +349,38 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Stack Template Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StackTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub compose_content: String,
+    pub env_content: Option<String>,
+    pub icon: Option<String>,
+    pub is_default: bool,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTemplateRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub category: Option<String>,
+    pub compose_content: String,
+    pub env_content: Option<String>,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveAsTemplateRequest {
+    pub stack_name: String,
+    pub template_name: String,
+    pub description: Option<String>,
+}
+
 // === Audit Log Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

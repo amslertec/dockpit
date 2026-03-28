@@ -120,6 +120,9 @@ async fn main() {
         std::os::unix::fs::symlink("/data/.docker", "/root/.docker").ok();
     }
 
+    // Seed default stack templates
+    db.seed_default_templates();
+
     // Restore Docker registry logins from DB
     restore_docker_logins(&db).await;
 
@@ -222,6 +225,10 @@ async fn main() {
         .route("/api/updates/check", post(handlers::run_update_check))
         .route("/api/updates/report", delete(handlers::clear_update_report))
         .route("/api/audit", get(handlers::get_audit_log))
+        .route("/api/templates", get(handlers::list_templates))
+        .route("/api/templates", post(handlers::create_template))
+        .route("/api/templates/{id}", get(handlers::get_template))
+        .route("/api/templates/{id}", delete(handlers::delete_template))
         .route("/api/env/{env_id}/vulnerabilities", get(handlers::env_get_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/scan", post(handlers::env_scan_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/history/{image}", get(handlers::env_get_scan_history))

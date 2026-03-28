@@ -615,6 +615,22 @@ export const de: Record<string, string> = {
 	'audit.jobDelete': 'Job L\u00f6schen',
 
 	// === Favoriten ===
+	// === Vorlagen ===
+	'templates.title': 'Stack-Vorlagen',
+	'templates.fromTemplate': 'Aus Vorlage',
+	'templates.selectTemplate': 'Vorlage auswählen',
+	'templates.default': 'Standard',
+	'templates.custom': 'Benutzerdefiniert',
+	'templates.useTemplate': 'Vorlage verwenden',
+	'templates.createCustom': 'Eigene Vorlage erstellen',
+	'templates.saveAsTemplate': 'Als Vorlage speichern',
+	'templates.templateName': 'Vorlagenname',
+	'templates.templateDesc': 'Beschreibung (optional)',
+	'templates.saved': 'Vorlage gespeichert',
+	'templates.deleted': 'Vorlage gelöscht',
+	'templates.confirmDelete': 'Diese Vorlage löschen?',
+	'templates.noTemplates': 'Keine Vorlagen verfügbar',
+
 	'favorites.title': 'Favoriten',
 	'favorites.pinned': 'Angepinnte Container',
 	'favorites.noFavorites': 'Keine angepinnten Container',

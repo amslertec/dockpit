@@ -1819,6 +1819,59 @@ pub async fn remove_registry(
     }
 }
 
+// === Stack Templates ===
+
+pub async fn list_templates(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<StackTemplate>>> {
+    Json(ApiResponse::ok(state.db.get_templates()))
+}
+
+pub async fn get_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<StackTemplate>> {
+    match state.db.get_template(&id) {
+        Some(t) => Json(ApiResponse::ok(t)),
+        None => Json(ApiResponse::err("Template not found")),
+    }
+}
+
+pub async fn create_template(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<CreateTemplateRequest>,
+) -> Json<ApiResponse<StackTemplate>> {
+    let t = StackTemplate {
+        id: format!("tpl-custom-{}", uuid::Uuid::new_v4()),
+        name: req.name,
+        description: req.description,
+        category: req.category.unwrap_or_else(|| "custom".into()),
+        compose_content: req.compose_content,
+        env_content: req.env_content,
+        icon: req.icon,
+        is_default: false,
+        created_at: None,
+    };
+    state.db.log_audit(&audit_user(&headers), "template_create", Some(&t.name), None);
+    match state.db.create_template(&t) {
+        Ok(_) => Json(ApiResponse::ok(t)),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
+pub async fn delete_template(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    state.db.log_audit(&audit_user(&headers), "template_delete", Some(&id), None);
+    match state.db.delete_template(&id) {
+        Ok(_) => Json(ApiResponse::ok("Deleted".into())),
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
 // === Audit Log ===
 
 pub async fn get_audit_log(

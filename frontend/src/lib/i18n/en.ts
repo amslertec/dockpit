@@ -205,6 +205,22 @@ export const en: Record<string, string> = {
 	'stacks.lines': 'lines',
 	'stacks.addFile': 'Add file',
 
+	// === Templates ===
+	'templates.title': 'Stack Templates',
+	'templates.fromTemplate': 'From Template',
+	'templates.selectTemplate': 'Choose a template',
+	'templates.default': 'Default',
+	'templates.custom': 'Custom',
+	'templates.useTemplate': 'Use Template',
+	'templates.createCustom': 'Create Custom Template',
+	'templates.saveAsTemplate': 'Save as Template',
+	'templates.templateName': 'Template Name',
+	'templates.templateDesc': 'Description (optional)',
+	'templates.saved': 'Template saved',
+	'templates.deleted': 'Template deleted',
+	'templates.confirmDelete': 'Delete this template?',
+	'templates.noTemplates': 'No templates available',
+
 	// === Environments ===
 	'env.title': 'Environments',
 	'env.connectedServers': 'Connected Servers',

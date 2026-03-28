@@ -12,7 +12,7 @@
 	import TextInput from '$lib/components/ui/TextInput.svelte';
 	import YAML from 'yaml';
 	import { canManageDocker, canEditContainers } from '$lib/stores/auth';
-	import type { StackInfo, StackFile } from '$lib/api/types';
+	import type { StackInfo, StackFile, StackTemplate } from '$lib/api/types';
 
 	let stacks = $state<StackInfo[]>([]);
 	let loading = $state(true);
@@ -21,6 +21,19 @@
 	let page = $state(1);
 	let perPage = $state(10);
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
+
+	// Template state
+	let templates = $state<StackTemplate[]>([]);
+	let showTemplates = $state(false);
+	let showSaveTemplate = $state(false);
+	let saveTemplateName = $state('');
+	let saveTemplateDesc = $state('');
+	let showCreateTemplate = $state(false);
+	let newTemplateName = $state('');
+	let newTemplateDesc = $state('');
+	let newTemplateCategory = $state('custom');
+	let newTemplateCompose = $state('');
+	let newTemplateEnv = $state('');
 
 	// Create modal state
 	let newName = $state('');
@@ -46,7 +59,7 @@
 	const runningCount = $derived(stacks.filter(s => s.status === 'running').length);
 	const stoppedCount = $derived(stacks.filter(s => s.status === 'stopped').length);
 
-	onMount(() => { resetCreate(); load(); });
+	onMount(() => { resetCreate(); load(); loadTemplates(); });
 	$effect(() => { $selectedEnv; load(); });
 	$effect(() => { search; page = 1; }); // Reset page on search
 
@@ -115,6 +128,62 @@
 		}};
 	}
 
+	async function loadTemplates() {
+		const r = await api.get<StackTemplate[]>('/api/templates');
+		if (r.success) templates = r.data || [];
+	}
+
+	function useTemplate(tpl: StackTemplate) {
+		showTemplates = false;
+		resetCreate();
+		tabs[0].content = tpl.compose_content;
+		tabs[1].content = tpl.env_content || '';
+		newName = tpl.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+		showCreate = true;
+	}
+
+	async function deleteTemplate(id: string) {
+		const r = await api.del<string>(`/api/templates/${id}`);
+		if (r.success) { toasts.success($t('templates.deleted')); loadTemplates(); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function saveCustomTemplate() {
+		if (!newTemplateName.trim()) return;
+		const r = await api.post<StackTemplate>('/api/templates', {
+			name: newTemplateName.trim(),
+			description: newTemplateDesc.trim() || null,
+			category: newTemplateCategory || 'custom',
+			compose_content: newTemplateCompose || `services:\n  app:\n    image: nginx:latest\n    ports:\n      - "8080:80"\n`,
+			env_content: newTemplateEnv.trim() || null,
+			icon: '📦'
+		});
+		if (r.success) {
+			toasts.success($t('templates.saved'));
+			newTemplateName = ''; newTemplateDesc = ''; newTemplateCompose = ''; newTemplateEnv = '';
+			showCreateTemplate = false;
+			loadTemplates();
+		} else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function saveAsTemplate() {
+		if (!saveTemplateName.trim()) return;
+		const r = await api.post<StackTemplate>('/api/templates', {
+			name: saveTemplateName.trim(),
+			description: saveTemplateDesc.trim() || null,
+			category: 'custom',
+			compose_content: tabs[0].content,
+			env_content: tabs[1].content.trim() || null,
+			icon: '📦'
+		});
+		if (r.success) {
+			toasts.success($t('templates.saved'));
+			saveTemplateName = ''; saveTemplateDesc = '';
+			showSaveTemplate = false;
+			loadTemplates();
+		} else toasts.error(r.error || $t('common.error'));
+	}
+
 	function handlePageChange(p: number, pp: number) { page = p; perPage = pp; }
 </script>
 
@@ -155,6 +224,10 @@
 		<div class="flex items-center gap-2">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
+			<Button variant="secondary" size="sm" onclick={() => showTemplates = true}>
+				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
+				{$t('templates.fromTemplate')}
+			</Button>
 			<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 				{$t('stacks.newStack')}
@@ -260,9 +333,107 @@
 			<span>{tabs[createTab].content.split('\n').length} {$t('stacks.lines')}</span>
 		</div>
 
+		<div class="flex items-center justify-between mt-4">
+			<Button variant="secondary" size="sm" onclick={() => { showSaveTemplate = true; }}>
+				<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+				{$t('templates.saveAsTemplate')}
+			</Button>
+			<div class="flex gap-2">
+				<Button variant="secondary" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" onclick={create} loading={saving}>{$t('stacks.createStack')}</Button>
+			</div>
+		</div>
+	</Modal>
+{/if}
+
+<!-- Template Selector Modal -->
+{#if showTemplates}
+	<Modal title={$t('templates.selectTemplate')} onclose={() => showTemplates = false}>
+		{#if templates.length === 0}
+			<div class="text-center py-10 text-sm text-muted">{$t('templates.noTemplates')}</div>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+				{#each templates as tpl}
+					<button
+						class="relative group bg-[var(--bg-1)] border border-theme rounded-xl p-4 text-left transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[0_0_16px_-4px_var(--accent)] cursor-pointer"
+						onclick={() => useTemplate(tpl)}
+					>
+						{#if !tpl.is_default}
+							<button
+								class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-muted hover:text-[var(--red)] hover:border-[var(--red)] opacity-0 group-hover:opacity-100 transition-all z-10"
+								onclick={(e) => { e.stopPropagation(); confirmDlg = { message: $t('templates.confirmDelete'), action: () => { confirmDlg = null; deleteTemplate(tpl.id); } }; }}
+								title={$t('common.delete')}
+							>
+								<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+							</button>
+						{/if}
+						<div class="flex items-start gap-3">
+							<span class="text-2xl leading-none shrink-0">{tpl.icon || '📦'}</span>
+							<div class="min-w-0 flex-1">
+								<div class="font-semibold text-sm text-primary truncate">{tpl.name}</div>
+								{#if tpl.description}
+									<div class="text-[11px] text-muted mt-0.5 line-clamp-2">{tpl.description}</div>
+								{/if}
+								<div class="flex items-center gap-1.5 mt-2">
+									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[var(--bg-0)] border border-theme text-muted">{tpl.category}</span>
+									{#if tpl.is_default}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--accent),transparent_85%)] text-accent border border-[color-mix(in_srgb,var(--accent),transparent_70%)]">{$t('templates.default')}</span>
+									{:else}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--green),transparent_85%)] text-[var(--green)] border border-[color-mix(in_srgb,var(--green),transparent_70%)]">{$t('templates.custom')}</span>
+									{/if}
+								</div>
+							</div>
+						</div>
+					</button>
+				{/each}
+			</div>
+		{/if}
+		<div class="flex justify-between items-center mt-4 pt-3 border-t border-theme">
+			<Button variant="secondary" size="sm" onclick={() => { showCreateTemplate = true; }}>
+				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				{$t('templates.createCustom')}
+			</Button>
+			<Button variant="secondary" size="sm" onclick={() => showTemplates = false}>{$t('common.close')}</Button>
+		</div>
+	</Modal>
+{/if}
+
+<!-- Create Custom Template Modal -->
+{#if showCreateTemplate}
+	<Modal title={$t('templates.createCustom')} onclose={() => showCreateTemplate = false}>
+		<div class="space-y-3">
+			<TextInput bind:value={newTemplateName} label={$t('templates.templateName')} placeholder="e.g. My Web Stack" id="tplname" />
+			<TextInput bind:value={newTemplateDesc} label={$t('templates.templateDesc')} placeholder="A short description..." id="tpldesc" />
+			<div>
+				<label for="tplcompose" class="block text-xs font-medium text-secondary mb-1">docker-compose.yml</label>
+				<textarea id="tplcompose" bind:value={newTemplateCompose} spellcheck={false}
+					class="w-full h-[200px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"
+					placeholder="services:&#10;  app:&#10;    image: nginx:latest"></textarea>
+			</div>
+			<div>
+				<label for="tplenv" class="block text-xs font-medium text-secondary mb-1">.env</label>
+				<textarea id="tplenv" bind:value={newTemplateEnv} spellcheck={false}
+					class="w-full h-[80px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"
+					placeholder="KEY=value"></textarea>
+			</div>
+		</div>
 		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="secondary" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
-			<Button variant="primary" size="sm" onclick={create} loading={saving}>{$t('stacks.createStack')}</Button>
+			<Button variant="secondary" size="sm" onclick={() => showCreateTemplate = false}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={saveCustomTemplate}>{$t('common.create')}</Button>
+		</div>
+	</Modal>
+{/if}
+
+<!-- Save as Template Modal -->
+{#if showSaveTemplate}
+	<Modal title={$t('templates.saveAsTemplate')} onclose={() => showSaveTemplate = false}>
+		<div class="space-y-3">
+			<TextInput bind:value={saveTemplateName} label={$t('templates.templateName')} placeholder="e.g. My Web Stack" id="savetplname" />
+			<TextInput bind:value={saveTemplateDesc} label={$t('templates.templateDesc')} placeholder="A short description..." id="savetpldesc" />
+		</div>
+		<div class="flex justify-end gap-2 mt-4">
+			<Button variant="secondary" size="sm" onclick={() => showSaveTemplate = false}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={saveAsTemplate}>{$t('common.save')}</Button>
 		</div>
 	</Modal>
 {/if}
