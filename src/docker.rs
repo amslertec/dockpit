@@ -516,7 +516,6 @@ impl DockerClient {
         filters.insert("event".to_string(), vec![
             "start".to_string(), "stop".to_string(),
             "restart".to_string(), "oom".to_string(),
-            "health_status".to_string(),
         ]);
 
         let options = EventsOptions {

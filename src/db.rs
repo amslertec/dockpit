@@ -563,7 +563,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM container_events WHERE timestamp < datetime('now', '-7 days')", []).ok();
         // Remove noisy events — keep only meaningful actions
-        conn.execute("DELETE FROM container_events WHERE event_action NOT IN ('start', 'stop', 'restart', 'oom', 'health_status')", []).ok();
+        conn.execute("DELETE FROM container_events WHERE event_action NOT IN ('start', 'stop', 'restart', 'oom')", []).ok();
     }
 
     // === Notifications ===
