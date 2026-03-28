@@ -132,15 +132,18 @@ async fn main() {
     let scheduler_state = state.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        // Initial event collection: fetch last 24 hours
+        handlers::collect_events_since(scheduler_state.clone(), 86400).await;
         let mut tick = 0u64;
         loop {
-            handlers::run_due_jobs(scheduler_state.clone()).await;
-            // Collect Docker events every 5 minutes (every 5th tick)
-            if tick % 5 == 0 {
-                handlers::collect_all_events(scheduler_state.clone()).await;
+            // Collect events every 30 seconds (last 60s window)
+            handlers::collect_events_since(scheduler_state.clone(), 60).await;
+            // Run scheduled jobs every 60 seconds (every 2nd tick)
+            if tick % 2 == 0 {
+                handlers::run_due_jobs(scheduler_state.clone()).await;
             }
             tick += 1;
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
     });
 

@@ -4,6 +4,7 @@
 	import { environments } from '$lib/stores/environment';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
+	import { formatDateTime } from '$lib/utils/format';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
@@ -384,7 +385,7 @@
 											{#if job.stack_name}<span class="text-muted ml-1">({job.stack_name})</span>{/if}
 										</td>
 										<td class="px-4 py-2.5 text-xs text-secondary">{intervalLabel(job.interval_hours)}</td>
-										<td class="px-4 py-2.5 text-xs text-secondary">{job.last_run || $t('jobs.never')}</td>
+										<td class="px-4 py-2.5 text-xs text-secondary">{job.last_run ? formatDateTime(job.last_run) : $t('jobs.never')}</td>
 										<td class="px-4 py-2.5">
 											{#if job.last_result === 'success'}
 												<span class="inline-flex items-center gap-1 text-[11px] text-[var(--green)]">

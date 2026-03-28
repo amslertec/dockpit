@@ -6,6 +6,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { formatDateTime } from '$lib/utils/format';
 	import type { UpdateCheckResult } from '$lib/api/types';
 
 	interface CheckStatus { running: boolean; total_checked: number; total_outdated: number; last_check?: string; }
@@ -119,7 +120,7 @@
 			<div class="text-[11px] {status.total_outdated > 0 ? 'text-red' : 'text-secondary'}">{$t('updates.outdated')}</div>
 		</div>
 		<div class="bg-card border border-theme rounded-lg p-3">
-			<div class="text-xs text-secondary">{status.last_check ? $t('updates.lastCheck', { time: status.last_check.substring(0, 16).replace('T', ' ') }) : $t('updates.notChecked')}</div>
+			<div class="text-xs text-secondary">{status.last_check ? $t('updates.lastCheck', { time: formatDateTime(status.last_check) }) : $t('updates.notChecked')}</div>
 		</div>
 	</div>
 {/if}
@@ -188,7 +189,7 @@
 							<td class="px-4 py-3 text-sm font-medium text-primary">{r.container_name}</td>
 							<td class="px-4 py-3 text-xs text-secondary max-w-[200px] truncate">{r.image}</td>
 							<td class="px-4 py-3 text-xs text-secondary">{r.server_name}</td>
-							<td class="px-4 py-3 text-xs text-muted hidden md:table-cell">{r.checked_at.substring(0, 16).replace('T', ' ')}</td>
+							<td class="px-4 py-3 text-xs text-muted hidden md:table-cell">{formatDateTime(r.checked_at)}</td>
 						</tr>
 					{/each}
 				</tbody>

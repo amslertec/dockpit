@@ -1815,17 +1815,17 @@ pub async fn env_refresh_events(
     Json(ApiResponse::ok(format!("{} events collected", count)))
 }
 
-/// Background: collect events from all environments
-pub async fn collect_all_events(state: Arc<AppState>) {
+/// Background: collect events from all environments for a given time window
+pub async fn collect_events_since(state: Arc<AppState>, since_secs: i64) {
     let envs = state.db.get_environments();
     for env in &envs {
         let events = if env.is_local {
-            let mut evts = state.docker.get_recent_events(300).await; // last 5 min
+            let mut evts = state.docker.get_recent_events(since_secs).await;
             for e in &mut evts { e.env_id = env.id.clone(); }
             evts
         } else {
             let client = reqwest::Client::builder().timeout(Duration::from_secs(15)).build().unwrap();
-            let url = format!("{}/api/events?since=300", env.url);
+            let url = format!("{}/api/events?since={}", env.url, since_secs);
             match client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
                 Ok(resp) => {
                     let mut evts: Vec<ContainerEvent> = resp.json::<ApiResponse<Vec<ContainerEvent>>>().await

@@ -6,6 +6,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
+	import { formatDateTimeSmart } from '$lib/utils/format';
 	import type { ContainerEvent, EventsResponse } from '$lib/api/types';
 
 	let events = $state<ContainerEvent[]>([]);
@@ -70,22 +71,6 @@
 	function handlePageChange(p: number, pp: number) {
 		page = p;
 		perPage = pp;
-	}
-
-	function formatTime(ts: string): string {
-		const d = new Date(ts);
-		const now = new Date();
-		const isToday = d.getFullYear() === now.getFullYear() &&
-			d.getMonth() === now.getMonth() &&
-			d.getDate() === now.getDate();
-		if (isToday) {
-			return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-		}
-		return d.getFullYear() + '-' +
-			String(d.getMonth() + 1).padStart(2, '0') + '-' +
-			String(d.getDate()).padStart(2, '0') + ' ' +
-			String(d.getHours()).padStart(2, '0') + ':' +
-			String(d.getMinutes()).padStart(2, '0');
 	}
 
 	function badgeClass(action: string): string {
@@ -173,7 +158,7 @@
 					<tbody>
 						{#each paged as event (event.id ?? event.timestamp + event.container_id)}
 							<tr class="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-hover)] transition-colors duration-150">
-								<td class="px-4 py-3 text-xs text-[var(--text-muted)] font-mono whitespace-nowrap">{formatTime(event.timestamp)}</td>
+								<td class="px-4 py-3 text-xs text-[var(--text-muted)] font-mono whitespace-nowrap">{formatDateTimeSmart(event.timestamp)}</td>
 								<td class="px-4 py-3 text-xs text-[var(--text)] font-medium" title={event.container_name || ''}>{truncateName(event.container_name || '')}</td>
 								<td class="px-4 py-3">
 									<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium {badgeClass(event.event_action)}">

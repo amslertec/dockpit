@@ -32,10 +32,35 @@
 	let updateInterval = $state('24');
 	let updateEnabled = $state(false);
 
+	// Timezone
+	let timezone = $state('');
+
+	const timezoneOptions = [
+		{ value: 'UTC', label: 'UTC' },
+		{ value: 'Europe/Zurich', label: 'Europe/Zurich (CET/CEST)' },
+		{ value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
+		{ value: 'Europe/Vienna', label: 'Europe/Vienna (CET/CEST)' },
+		{ value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
+		{ value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
+		{ value: 'Europe/Amsterdam', label: 'Europe/Amsterdam (CET/CEST)' },
+		{ value: 'Europe/Rome', label: 'Europe/Rome (CET/CEST)' },
+		{ value: 'Europe/Madrid', label: 'Europe/Madrid (CET/CEST)' },
+		{ value: 'Europe/Stockholm', label: 'Europe/Stockholm (CET/CEST)' },
+		{ value: 'US/Eastern', label: 'US/Eastern (EST/EDT)' },
+		{ value: 'US/Central', label: 'US/Central (CST/CDT)' },
+		{ value: 'US/Mountain', label: 'US/Mountain (MST/MDT)' },
+		{ value: 'US/Pacific', label: 'US/Pacific (PST/PDT)' },
+		{ value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+		{ value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+		{ value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+		{ value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
+	];
+
 	const tabs = [
-		{ id: 0, label: $t('settings.updateMonitor') },
-		{ id: 1, label: $t('settings.webhooks') },
-		{ id: 2, label: $t('settings.email') },
+		{ id: 0, label: $t('profile.general') },
+		{ id: 1, label: $t('settings.updateMonitor') },
+		{ id: 2, label: $t('settings.webhooks') },
+		{ id: 3, label: $t('settings.email') },
 	];
 
 	onMount(async () => {
@@ -53,6 +78,7 @@
 			smtpTls = settings['smtp_tls'] !== 'false';
 			updateInterval = settings['update_interval'] || '24';
 			updateEnabled = settings['update_enabled'] === 'true';
+			timezone = settings['timezone'] || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 		}
 		loading = false;
 	});
@@ -64,9 +90,11 @@
 			smtp_host: smtpHost, smtp_port: smtpPort, smtp_user: smtpUser, smtp_pass: smtpPass,
 			smtp_from: smtpFrom, smtp_to: smtpTo, smtp_tls: String(smtpTls),
 			update_interval: updateInterval, update_enabled: String(updateEnabled),
+			timezone,
 		};
 		const r = await api.post<string>('/settings', { settings: s });
 		saving = false;
+		localStorage.setItem('dp_timezone', timezone);
 		if (r.success) toasts.success($t('settings.saved'));
 		else toasts.error(r.error || $t('common.error'));
 	}
@@ -88,8 +116,21 @@
 		<Tabs tabs={tabs} active={activeTab} onchange={(id) => activeTab = id} />
 
 		<div class="p-5">
-			<!-- Update Monitor -->
+			<!-- General -->
 			{#if activeTab === 0}
+				<h3 class="text-sm font-semibold text-[var(--text)] mb-2">{$t('settings.timezone')}</h3>
+				<p class="text-xs text-[var(--text-secondary)] mb-4">{$t('settings.timezoneDesc')}</p>
+				<div class="max-w-md space-y-4">
+					<CustomSelect
+						options={timezoneOptions}
+						value={timezone}
+						onchange={(v) => { timezone = String(v); localStorage.setItem('dp_timezone', String(v)); }}
+					/>
+					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
+				</div>
+
+			<!-- Update Monitor -->
+			{:else if activeTab === 1}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.autoCheck')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.autoCheckDesc')}</p>
 
@@ -118,7 +159,7 @@
 				</div>
 
 			<!-- Webhooks -->
-			{:else if activeTab === 1}
+			{:else if activeTab === 2}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.webhookTitle')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.webhookDesc')}</p>
 
@@ -139,7 +180,7 @@
 				</div>
 
 			<!-- Email -->
-			{:else if activeTab === 2}
+			{:else if activeTab === 3}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.emailTitle')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.emailDesc')}</p>
 

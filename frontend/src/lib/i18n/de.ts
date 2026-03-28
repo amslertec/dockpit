@@ -347,6 +347,8 @@ export const de: Record<string, string> = {
 	'settings.recipient': 'Empfänger',
 	'settings.recipientHint': 'Mehrere Empfänger mit Komma trennen',
 	'settings.useTLS': 'TLS/STARTTLS verwenden',
+	'settings.timezone': 'Zeitzone',
+	'settings.timezoneDesc': 'Stelle deine Zeitzone für alle Datums- und Zeitanzeigen ein',
 
 	// === Updates ===
 	'updates.title': 'Update Monitor',

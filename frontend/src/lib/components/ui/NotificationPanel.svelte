@@ -3,6 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import type { NotificationInfo } from '$lib/api/types';
+	import { formatTimeAgo } from '$lib/utils/format';
 	import Button from './Button.svelte';
 
 	interface Props {
@@ -12,16 +13,6 @@
 
 	let notifications = $state<NotificationInfo[]>([]);
 	let loading = $state(true);
-
-	function timeAgo(dateStr: string): string {
-		const now = new Date();
-		const date = new Date(dateStr + 'Z');
-		const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-		if (diff < 60) return 'just now';
-		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-		return `${Math.floor(diff / 86400)}d ago`;
-	}
 
 	async function fetchNotifications() {
 		const res = await api.get<NotificationInfo[]>('/notifications');
@@ -122,7 +113,7 @@
 							{/if}
 						</div>
 						<p class="text-[11px] text-[var(--text-secondary)] mt-0.5 line-clamp-2">{notif.message}</p>
-						<span class="text-[10px] text-[var(--text-muted)] mt-1 block">{timeAgo(notif.created_at)}</span>
+						<span class="text-[10px] text-[var(--text-muted)] mt-1 block">{formatTimeAgo(notif.created_at)}</span>
 					</div>
 
 					<!-- Delete button -->
