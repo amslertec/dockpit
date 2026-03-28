@@ -35,7 +35,9 @@
 
 	function startPolling() {
 		if (pollInterval) clearInterval(pollInterval);
-		pollInterval = setInterval(loadScans, 5000);
+		lastScanCount = scans.length;
+		pollStableCount = 0;
+		pollInterval = setInterval(pollScans, 5000);
 	}
 	function stopPolling() {
 		if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
@@ -46,27 +48,32 @@
 
 	async function loadScans() {
 		if (!$selectedEnv) return;
-		const wasLoading = loading;
-		if (!scanning) loading = true;
+		loading = true;
 		const r = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
 		if (r.success && r.data) {
 			scans = r.data;
-			// If polling and scan count stabilized, stop polling
-			if (scanning && pollInterval) {
-				if (scans.length === lastScanCount) {
-					pollStableCount++;
-					if (pollStableCount >= 3) {
-						stopPolling();
-						scanning = false;
-						pollStableCount = 0;
-					}
-				} else {
-					pollStableCount = 0;
-					lastScanCount = scans.length;
-				}
-			}
 		}
 		loading = false;
+	}
+
+	/** Called during active scan polling — updates data without loading spinner */
+	async function pollScans() {
+		if (!$selectedEnv) return;
+		const r = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
+		if (r.success && r.data) {
+			scans = r.data;
+			if (scans.length === lastScanCount) {
+				pollStableCount++;
+				if (pollStableCount >= 4) {
+					stopPolling();
+					scanning = false;
+					pollStableCount = 0;
+				}
+			} else {
+				pollStableCount = 0;
+				lastScanCount = scans.length;
+			}
+		}
 	}
 
 	async function scanAll() {
