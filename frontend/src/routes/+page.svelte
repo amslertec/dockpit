@@ -16,6 +16,7 @@
 	import UnusedResourcesWidget from '$lib/components/widgets/UnusedResourcesWidget.svelte';
 	import QuickActionsWidget from '$lib/components/widgets/QuickActionsWidget.svelte';
 	import ResourceMonitorWidget from '$lib/components/widgets/ResourceMonitorWidget.svelte';
+	import FavoritesWidget from '$lib/components/widgets/FavoritesWidget.svelte';
 	import type { ServerOverview, SystemInfo } from '$lib/api/types';
 
 	let servers = $state<ServerOverview[]>([]);
@@ -44,6 +45,7 @@
 		{ type: 'unused-resources', label: $t('home.widgetCleanup'), icon: '🧹' },
 		{ type: 'quick-actions', label: $t('home.widgetActions'), icon: '🚀' },
 		{ type: 'resource-monitor', label: $t('monitoring.title'), icon: '📈' },
+		{ type: 'favorites', label: $t('favorites.title'), icon: '⭐' },
 	];
 
 	function hasType(type: string): boolean { return $widgets.some(w => w.type === type); }
@@ -368,6 +370,8 @@
 							<QuickActionsWidget />
 						{:else if w.type === 'resource-monitor'}
 							<ResourceMonitorWidget />
+						{:else if w.type === 'favorites'}
+							<FavoritesWidget />
 						{/if}
 					</div>
 				</div>

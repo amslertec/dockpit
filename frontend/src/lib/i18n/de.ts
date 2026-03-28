@@ -584,4 +584,12 @@ export const de: Record<string, string> = {
 	'vuln.fixedVersion': 'Fix-Version',
 	'vuln.description': 'Beschreibung',
 	'vuln.imagesScanned': 'Images gescannt',
+
+	// === Favoriten ===
+	'favorites.title': 'Favoriten',
+	'favorites.pinned': 'Angepinnte Container',
+	'favorites.noFavorites': 'Keine angepinnten Container',
+	'favorites.noFavoritesDesc': 'Klicke auf das Stern-Icon bei einem Container um ihn hier anzupinnen',
+	'favorites.pin': 'Anpinnen',
+	'favorites.unpin': 'Entfernen',
 };

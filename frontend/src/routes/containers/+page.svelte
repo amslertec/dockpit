@@ -12,6 +12,7 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { canManageDocker, canEditContainers } from '$lib/stores/auth';
 	import { t } from '$lib/i18n';
+	import { favorites, type FavoriteContainer } from '$lib/stores/favorites';
 	import type { ContainerInfo, ImageUpdateCheck } from '$lib/api/types';
 
 	let containers = $state<ContainerInfo[]>([]);
@@ -183,6 +184,49 @@
 
 <svelte:head><title>DockPit — Container</title></svelte:head>
 
+<!-- Pinned Containers -->
+{#if !loading && $favorites.length > 0}
+	<div class="mb-4">
+		<h3 class="text-sm font-semibold text-primary mb-2">{$t('favorites.pinned')}</h3>
+		<div class="flex flex-wrap gap-3">
+			{#each $favorites.filter(f => f.envId === $selectedEnv) as fav}
+				{@const fc = containers.find(c => c.id === fav.id)}
+				<div class="bg-card border border-theme rounded-lg p-3 flex items-center gap-3 min-w-[220px]">
+					<div class="flex-1 min-w-0">
+						<div class="text-sm font-medium text-primary truncate">{fav.name}</div>
+						<div class="text-[10px] text-muted truncate max-w-[140px]">{fav.image}</div>
+					</div>
+					{#if fc}
+						<Badge status={fc.state} health={extractHealth(fc.status)} />
+					{:else}
+						<span class="text-[10px] text-muted">—</span>
+					{/if}
+					<div class="flex gap-1">
+						{#if $canEditContainers && fc}
+							{#if fc.state !== 'running'}
+								<button class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(fav.id, 'start')} title={$t('containers.start')}>
+									<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+							{:else}
+								<button class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(fav.id, 'stop')} title={$t('containers.stop')}>
+									<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+							{/if}
+						{/if}
+						{#if $canManageDocker}
+							<a href="/containers/{fav.id}/logs" class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition no-underline" title={$t('containers.logs')}>
+								<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></a>
+							<a href="/containers/{fav.id}/terminal" class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--green)] hover:border-[var(--green)] transition no-underline" title={$t('containers.terminal')}>
+								<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></a>
+						{/if}
+						<button class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--yellow)] hover:text-[var(--text-muted)] transition" onclick={() => favorites.remove(fav.id)} title={$t('favorites.unpin')}>
+							<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+	</div>
+{/if}
+
 <!-- Stats -->
 {#if !loading}
 	{@const running = containers.filter(c => c.state === 'running').length}
@@ -264,6 +308,7 @@
 		<div class="overflow-x-auto">
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
+					<th class="w-10 px-4 py-2"></th>
 					<th class="w-10 px-4 py-2"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell">Stack</th>
@@ -277,6 +322,11 @@
 				<tbody>
 					{#each paged as c}
 						<tr class="border-b border-theme last:border-0 hover:bg-hover transition {selected.has(c.id) ? 'bg-accent-light' : ''}">
+							<td class="w-10 px-4 py-2.5">
+								<button class="flex items-center justify-center {$favorites.some(f => f.id === c.id) ? 'text-[var(--yellow)]' : 'text-[var(--text-muted)] hover:text-[var(--yellow)]'} transition" onclick={() => favorites.toggle({id: c.id, name: c.name, envId: $selectedEnv, image: c.image})} title={$favorites.some(f => f.id === c.id) ? $t('favorites.unpin') : $t('favorites.pin')}>
+									<svg class="w-4 h-4" viewBox="0 0 24 24" fill="{$favorites.some(f => f.id === c.id) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+								</button>
+							</td>
 							<td class="w-10 px-4 py-2.5"><CustomCheckbox checked={selected.has(c.id)} onchange={() => toggleSelect(c.id)} size="sm" /></td>
 							<td class="px-4 py-2.5">
 								<div class="text-sm font-medium text-primary">{c.name}</div>
@@ -339,7 +389,7 @@
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="10" class="text-center py-10 text-sm text-muted">{$t('containers.noContainers')}</td></tr>
+						<tr><td colspan="11" class="text-center py-10 text-sm text-muted">{$t('containers.noContainers')}</td></tr>
 					{/each}
 				</tbody>
 			</table>

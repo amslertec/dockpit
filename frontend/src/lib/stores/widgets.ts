@@ -4,7 +4,7 @@ import { auth } from './auth';
 
 export interface WidgetConfig {
 	id: string;
-	type: 'server' | 'quick-stats' | 'resources' | 'container-health' | 'stack-status' | 'disk-usage' | 'uptime' | 'unused-resources' | 'quick-actions' | 'resource-monitor';
+	type: 'server' | 'quick-stats' | 'resources' | 'container-health' | 'stack-status' | 'disk-usage' | 'uptime' | 'unused-resources' | 'quick-actions' | 'resource-monitor' | 'favorites';
 	envId?: string;
 	x: number;
 	y: number;

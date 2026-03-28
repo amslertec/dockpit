@@ -587,4 +587,12 @@ export const en: Record<string, string> = {
 	'vuln.fixedVersion': 'Fixed Version',
 	'vuln.description': 'Description',
 	'vuln.imagesScanned': 'Images Scanned',
+
+	// === Favorites ===
+	'favorites.title': 'Favorites',
+	'favorites.pinned': 'Pinned Containers',
+	'favorites.noFavorites': 'No pinned containers',
+	'favorites.noFavoritesDesc': 'Click the star icon on any container to pin it here',
+	'favorites.pin': 'Pin',
+	'favorites.unpin': 'Unpin',
 };
