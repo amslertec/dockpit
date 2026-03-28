@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -13,7 +13,10 @@
 	let loading = $state(true);
 	let scanning = $state(false);
 	let scanningImage = $state<string | null>(null);
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let expandedRows = $state<Set<number>>(new Set());
+	let cveShowAll = $state<Set<number>>(new Set());
+	const CVE_PAGE_SIZE = 20;
 	let page = $state(1);
 	let perPage = $state(25);
 
@@ -27,14 +30,41 @@
 	);
 
 	onMount(() => { loadScans(); });
+	onDestroy(() => { if (pollInterval) clearInterval(pollInterval); });
 	$effect(() => { $selectedEnv; loadScans(); });
+
+	function startPolling() {
+		if (pollInterval) clearInterval(pollInterval);
+		pollInterval = setInterval(loadScans, 5000);
+	}
+	function stopPolling() {
+		if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+	}
+
+	let lastScanCount = 0;
+	let pollStableCount = 0;
 
 	async function loadScans() {
 		if (!$selectedEnv) return;
-		loading = true;
+		const wasLoading = loading;
+		if (!scanning) loading = true;
 		const r = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
 		if (r.success && r.data) {
 			scans = r.data;
+			// If polling and scan count stabilized, stop polling
+			if (scanning && pollInterval) {
+				if (scans.length === lastScanCount) {
+					pollStableCount++;
+					if (pollStableCount >= 3) {
+						stopPolling();
+						scanning = false;
+						pollStableCount = 0;
+					}
+				} else {
+					pollStableCount = 0;
+					lastScanCount = scans.length;
+				}
+			}
 		}
 		loading = false;
 	}
@@ -45,11 +75,11 @@
 		const r = await api.post(`/env/${$selectedEnv}/vulnerabilities/scan`, {});
 		if (r.success) {
 			toasts.success($t('vuln.scanStarted'));
-			setTimeout(() => loadScans(), 3000);
+			startPolling();
 		} else {
 			toasts.error(r.error || $t('common.error'));
+			scanning = false;
 		}
-		scanning = false;
 	}
 
 	async function scanImage(image: string) {
@@ -58,8 +88,7 @@
 		const encoded = encodeURIComponent(image);
 		const r = await api.post(`/env/${$selectedEnv}/vulnerabilities/scan/${encoded}`, {});
 		if (r.success) {
-			toasts.success($t('vuln.scanning'));
-			setTimeout(() => loadScans(), 3000);
+			startPolling();
 		} else {
 			toasts.error(r.error || $t('common.error'));
 		}
@@ -231,6 +260,8 @@
 											{#if cves.length === 0}
 												<div class="px-6 py-4 text-xs text-[var(--text-muted)] text-center">No CVE details available</div>
 											{:else}
+												{@const showAllCves = scan.id != null && cveShowAll.has(scan.id)}
+												{@const visibleCveList = showAllCves ? cves : cves.slice(0, CVE_PAGE_SIZE)}
 												<div class="overflow-x-auto">
 													<table class="w-full text-xs">
 														<thead>
@@ -244,7 +275,7 @@
 															</tr>
 														</thead>
 														<tbody>
-															{#each cves as cve (cve.id)}
+															{#each visibleCveList as cve, ci (cve.id + '-' + ci)}
 																<tr class="border-b border-[var(--border)] last:border-0">
 																	<td class="px-6 py-2 font-mono whitespace-nowrap">
 																		{#if cve.id && cve.id.startsWith('CVE-')}
@@ -266,6 +297,13 @@
 															{/each}
 														</tbody>
 													</table>
+													{#if cves.length > CVE_PAGE_SIZE && !showAllCves}
+														<div class="px-6 py-2 border-t border-[var(--border)] text-center">
+															<button class="text-xs text-[var(--accent)] hover:underline" onclick={() => { if (scan.id != null) { const s = new Set(cveShowAll); s.add(scan.id); cveShowAll = s; } }}>
+																Show all {cves.length} CVEs ({cves.length - CVE_PAGE_SIZE} more)
+															</button>
+														</div>
+													{/if}
 												</div>
 											{/if}
 										</div>
