@@ -271,3 +271,18 @@ export interface EventsResponse {
 	events: ContainerEvent[];
 	total: number;
 }
+
+// === Vulnerability Scanning ===
+
+export interface VulnerabilityScan {
+	id?: number;
+	env_id: string;
+	image: string;
+	critical: number;
+	high: number;
+	medium: number;
+	low: number;
+	total: number;
+	cves_json?: string;
+	scanned_at?: string;
+}

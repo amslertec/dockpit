@@ -1769,6 +1769,179 @@ pub async fn remove_registry(
     }
 }
 
+// === Vulnerability Scanning ===
+
+pub async fn env_get_vulnerabilities(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+) -> Json<ApiResponse<Vec<VulnerabilityScan>>> {
+    Json(ApiResponse::ok(state.db.get_scan_results(&env_id)))
+}
+
+pub async fn env_get_scan_history(
+    State(state): State<Arc<AppState>>,
+    Path((env_id, image)): Path<(String, String)>,
+) -> Json<ApiResponse<Vec<VulnerabilityScan>>> {
+    let decoded = urlencoding::decode(&image).unwrap_or_default().to_string();
+    Json(ApiResponse::ok(state.db.get_scan_history(&env_id, &decoded)))
+}
+
+pub async fn env_scan_vulnerabilities(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+) -> Json<ApiResponse<String>> {
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+
+    let state_clone = state.clone();
+    let env_id_clone = env_id.clone();
+    tokio::spawn(async move {
+        let containers: Vec<ContainerInfo> = if env.is_local {
+            state_clone.docker.list_containers().await.unwrap_or_default()
+        } else {
+            let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
+            let url = format!("{}/api/containers", env.url);
+            client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+                .send().await.ok()
+                .and_then(|r| futures_lite::future::block_on(r.json::<ApiResponse<Vec<ContainerInfo>>>()).ok())
+                .and_then(|r| r.data).unwrap_or_default()
+        };
+
+        // Unique images only
+        let mut scanned = std::collections::HashSet::new();
+        for c in &containers {
+            if scanned.contains(&c.image) { continue; }
+            scanned.insert(c.image.clone());
+
+            let result = if env.is_local {
+                scout_scan_image(&c.image).await
+            } else {
+                // Proxy to agent
+                let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().unwrap();
+                let url = format!("{}/api/vulnerabilities/scan", env.url);
+                let body = serde_json::json!({ "image": c.image });
+                match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+                    .json(&body).send().await
+                {
+                    Ok(resp) => resp.json::<ApiResponse<VulnerabilityScan>>().await
+                        .ok().and_then(|r| r.data).ok_or_else(|| "Agent scan failed".to_string()),
+                    Err(e) => Err(e.to_string()),
+                }
+            };
+
+            if let Ok(mut scan) = result {
+                scan.env_id = env_id_clone.clone();
+                state_clone.db.save_scan_result(&scan).ok();
+            }
+        }
+
+        state_clone.db.create_notification(
+            "scan_complete",
+            "Vulnerability scan complete",
+            &format!("{} images scanned", scanned.len()),
+        ).ok();
+    });
+
+    Json(ApiResponse::ok("Scan started".into()))
+}
+
+pub async fn env_scan_single_image(
+    State(state): State<Arc<AppState>>,
+    Path((env_id, image)): Path<(String, String)>,
+) -> Json<ApiResponse<VulnerabilityScan>> {
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+    let decoded_image = urlencoding::decode(&image).unwrap_or_default().to_string();
+
+    let result = if env.is_local {
+        scout_scan_image(&decoded_image).await
+    } else {
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().unwrap();
+        let url = format!("{}/api/vulnerabilities/scan", env.url);
+        let body = serde_json::json!({ "image": decoded_image });
+        match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+            .json(&body).send().await
+        {
+            Ok(resp) => resp.json::<ApiResponse<VulnerabilityScan>>().await
+                .ok().and_then(|r| r.data).ok_or_else(|| "Agent scan failed".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    };
+
+    match result {
+        Ok(mut scan) => {
+            scan.env_id = env_id;
+            state.db.save_scan_result(&scan).ok();
+            Json(ApiResponse::ok(scan))
+        }
+        Err(e) => Json(ApiResponse::err(e)),
+    }
+}
+
+/// Execute docker scout cves on a local image
+async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
+    let output = tokio::process::Command::new("docker")
+        .args(["scout", "cves", "--format", "json", "--only-severity", "critical,high,medium,low", image])
+        .output()
+        .await
+        .map_err(|e| format!("docker scout not available: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("authentication required") || stderr.contains("login") || stderr.contains("unauthorized") {
+            return Err("Docker Hub login required. Please add Docker Hub credentials in Settings → Docker Login.".into());
+        }
+        return Err(format!("Scan failed: {}", stderr.chars().take(200).collect::<String>()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|_| "Failed to parse scout output".to_string())?;
+
+    let mut critical = 0i32;
+    let mut high = 0i32;
+    let mut medium = 0i32;
+    let mut low = 0i32;
+    let mut cves = Vec::new();
+
+    // Parse docker scout JSON output
+    if let Some(vulns) = json.pointer("/vulnerabilities").and_then(|v| v.as_array()) {
+        for v in vulns {
+            let severity = v.get("severity").and_then(|s| s.as_str()).unwrap_or("");
+            match severity.to_lowercase().as_str() {
+                "critical" => critical += 1,
+                "high" => high += 1,
+                "medium" => medium += 1,
+                "low" => low += 1,
+                _ => {}
+            }
+            cves.push(serde_json::json!({
+                "id": v.get("cve_id").or_else(|| v.get("id")).and_then(|s| s.as_str()).unwrap_or(""),
+                "severity": severity,
+                "package": v.get("package_name").or_else(|| v.get("pkgName")).and_then(|s| s.as_str()).unwrap_or(""),
+                "version": v.get("package_version").or_else(|| v.get("installedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
+                "fixed": v.get("fixed_version").or_else(|| v.get("fixedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
+                "description": v.get("description").or_else(|| v.get("title")).and_then(|s| s.as_str()).unwrap_or("").chars().take(200).collect::<String>(),
+            }));
+        }
+    }
+
+    let total = critical + high + medium + low;
+
+    Ok(VulnerabilityScan {
+        id: None,
+        env_id: String::new(),
+        image: image.to_string(),
+        critical, high, medium, low, total,
+        cves_json: Some(serde_json::to_string(&cves).unwrap_or_default()),
+        scanned_at: None,
+    })
+}
+
 // === Container Events ===
 
 pub async fn env_get_events(

@@ -55,6 +55,11 @@ COPY --from=docker-bins /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
+# Install Docker Scout CLI plugin
+RUN curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh -o /tmp/install-scout.sh \
+    && sh /tmp/install-scout.sh \
+    && rm /tmp/install-scout.sh
+
 COPY --from=builder /app/target/release/dockpit-server /usr/local/bin/dockpit-server
 
 RUN mkdir -p /data/certs

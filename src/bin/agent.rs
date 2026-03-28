@@ -1181,6 +1181,62 @@ async fn agent_handle_terminal(
 #[derive(Debug, Serialize, Deserialize)]
 struct DiskUsageInfo { images_size: f64, containers_size: f64, volumes_size: f64, build_cache_size: f64, total_size: f64 }
 
+#[derive(Debug, Deserialize)]
+struct ScanReq { image: Option<String> }
+
+async fn agent_scan_vulnerability(
+    State(state): State<Arc<AgentState>>,
+    headers: HeaderMap,
+    Json(req): Json<ScanReq>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    state.check_auth(&headers)?;
+    let image = req.image.unwrap_or_default();
+    if image.is_empty() { return Ok(Json(ApiResponse::err("No image specified"))); }
+
+    let output = tokio::process::Command::new("docker")
+        .args(["scout", "cves", "--format", "json", "--only-severity", "critical,high,medium,low", &image])
+        .output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Ok(Json(ApiResponse::err(format!("Scan failed: {}", stderr.chars().take(200).collect::<String>()))));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+
+    let mut critical = 0i32;
+    let mut high = 0i32;
+    let mut medium = 0i32;
+    let mut low = 0i32;
+    let mut cves = Vec::new();
+
+    if let Some(vulns) = json.pointer("/vulnerabilities").and_then(|v| v.as_array()) {
+        for v in vulns {
+            let sev = v.get("severity").and_then(|s| s.as_str()).unwrap_or("");
+            match sev.to_lowercase().as_str() {
+                "critical" => critical += 1, "high" => high += 1,
+                "medium" => medium += 1, "low" => low += 1, _ => {}
+            }
+            cves.push(serde_json::json!({
+                "id": v.get("cve_id").or(v.get("id")).and_then(|s| s.as_str()).unwrap_or(""),
+                "severity": sev,
+                "package": v.get("package_name").or(v.get("pkgName")).and_then(|s| s.as_str()).unwrap_or(""),
+                "version": v.get("package_version").or(v.get("installedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
+                "fixed": v.get("fixed_version").or(v.get("fixedVersion")).and_then(|s| s.as_str()).unwrap_or(""),
+                "description": v.get("description").or(v.get("title")).and_then(|s| s.as_str()).unwrap_or("").chars().take(200).collect::<String>(),
+            }));
+        }
+    }
+
+    let total = critical + high + medium + low;
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "env_id": "", "image": image, "critical": critical, "high": high,
+        "medium": medium, "low": low, "total": total,
+        "cves_json": serde_json::to_string(&cves).unwrap_or_default(),
+    }))))
+}
+
 async fn agent_get_events(
     State(state): State<Arc<AgentState>>,
     headers: HeaderMap,
@@ -1355,6 +1411,7 @@ async fn main() {
         .route("/api/networks/{id}", delete(remove_network))
         .route("/api/disk-usage", get(disk_usage))
         .route("/api/system", get(system_info))
+        .route("/api/vulnerabilities/scan", post(agent_scan_vulnerability))
         .route("/api/events", get(agent_get_events))
         // Stacks
         .route("/api/stacks", get(agent_list_stacks))

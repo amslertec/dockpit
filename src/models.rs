@@ -349,6 +349,27 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Vulnerability Scan Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VulnerabilityScan {
+    pub id: Option<i64>,
+    pub env_id: String,
+    pub image: String,
+    pub critical: i32,
+    pub high: i32,
+    pub medium: i32,
+    pub low: i32,
+    pub total: i32,
+    pub cves_json: Option<String>,
+    pub scanned_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScanRequest {
+    pub image: Option<String>,
+}
+
 // === Container Event Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

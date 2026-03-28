@@ -2,7 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo, ContainerEvent};
+use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo, ContainerEvent, VulnerabilityScan};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -99,6 +99,19 @@ impl Database {
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS vulnerability_scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                env_id TEXT NOT NULL,
+                image TEXT NOT NULL,
+                critical INTEGER NOT NULL DEFAULT 0,
+                high INTEGER NOT NULL DEFAULT 0,
+                medium INTEGER NOT NULL DEFAULT 0,
+                low INTEGER NOT NULL DEFAULT 0,
+                total INTEGER NOT NULL DEFAULT 0,
+                cves_json TEXT,
+                scanned_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS container_events (
@@ -526,6 +539,54 @@ impl Database {
             params![result, message, next_run, id],
         )?;
         Ok(())
+    }
+
+    // === Vulnerability Scans ===
+
+    pub fn save_scan_result(&self, scan: &VulnerabilityScan) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO vulnerability_scans (env_id, image, critical, high, medium, low, total, cves_json, scanned_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'))",
+            params![scan.env_id, scan.image, scan.critical, scan.high, scan.medium, scan.low, scan.total, scan.cves_json],
+        )?;
+        // Keep max 10 scans per image
+        conn.execute(
+            "DELETE FROM vulnerability_scans WHERE id NOT IN (SELECT id FROM vulnerability_scans WHERE env_id = ?1 AND image = ?2 ORDER BY scanned_at DESC LIMIT 10) AND env_id = ?1 AND image = ?2",
+            params![scan.env_id, scan.image],
+        )?;
+        Ok(())
+    }
+
+    /// Get latest scan per image
+    pub fn get_scan_results(&self, env_id: &str) -> Vec<VulnerabilityScan> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, env_id, image, critical, high, medium, low, total, cves_json, scanned_at FROM vulnerability_scans WHERE env_id = ?1 AND id IN (SELECT MAX(id) FROM vulnerability_scans WHERE env_id = ?1 GROUP BY image) ORDER BY critical DESC, high DESC"
+        ).unwrap();
+        stmt.query_map(params![env_id], |row| {
+            Ok(VulnerabilityScan {
+                id: row.get(0)?, env_id: row.get(1)?, image: row.get(2)?,
+                critical: row.get(3)?, high: row.get(4)?, medium: row.get(5)?,
+                low: row.get(6)?, total: row.get(7)?, cves_json: row.get(8)?,
+                scanned_at: row.get(9)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    /// Get scan history for a specific image
+    pub fn get_scan_history(&self, env_id: &str, image: &str) -> Vec<VulnerabilityScan> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, env_id, image, critical, high, medium, low, total, cves_json, scanned_at FROM vulnerability_scans WHERE env_id = ?1 AND image = ?2 ORDER BY scanned_at DESC LIMIT 10"
+        ).unwrap();
+        stmt.query_map(params![env_id, image], |row| {
+            Ok(VulnerabilityScan {
+                id: row.get(0)?, env_id: row.get(1)?, image: row.get(2)?,
+                critical: row.get(3)?, high: row.get(4)?, medium: row.get(5)?,
+                low: row.get(6)?, total: row.get(7)?, cves_json: row.get(8)?,
+                scanned_at: row.get(9)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
     }
 
     // === Container Events ===

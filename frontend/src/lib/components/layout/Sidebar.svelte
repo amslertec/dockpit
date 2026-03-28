@@ -88,6 +88,10 @@
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
 					{$t('events.title')}
 				</a>
+				<a href="/vulnerabilities" class="nav-item {isActive('/vulnerabilities') ? 'nav-active' : ''}" onclick={onclose}>
+					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+					{$t('vuln.title')}
+				</a>
 				<a href="/environments" class="nav-item {isActive('/environments') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
 					{$t('nav.environments')}
