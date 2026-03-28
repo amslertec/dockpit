@@ -24,6 +24,27 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Grouped Results** — Categories with icons and status badges
 - **Instant Navigation** — Jump to any page or resource in seconds
 
+### Container Event Log
+- **Live Timeline** — Real-time container events: start, stop, restart, OOM
+- **Dedicated /events Page** — Under "Management" in sidebar
+- **Per-Server View** — Shows events only for the currently selected server
+- **Auto-Collect** — Background collector runs every 30 seconds
+- **7-Day Retention** — Events automatically cleaned up after 7 days
+- **Filter & Paginate** — Filter by event type, paginated results
+
+### Scheduled Jobs (Cron Automation)
+- **Per-Server Jobs** — Schedule tasks per Docker server
+- **3 Job Types** — Update Check, System Prune, Stack Redeploy
+- **Configurable Intervals** — 1h, 6h, 12h, 24h, 48h, weekly
+- **Run Now** — Manual trigger for any job
+- **Result Tracking** — Success/error status with message history
+
+### Notification Center
+- **Bell Icon** — Topbar with unread badge count
+- **Persistent Notifications** — Survive page reloads, stored in database
+- **Auto-Generated** — Notifications for: job results, update checks, server connection problems
+- **Preferences** — Per-type enable/disable in Profile settings
+
 ### Container Management
 - **Full Lifecycle** — Start, stop, restart, recreate, and remove containers
 - **Bulk Actions** — Select multiple containers for batch operations
@@ -73,6 +94,7 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Webhook Integration** — Send update reports to Slack, Discord, Microsoft Teams, or any webhook receiver
 - **Email Notifications** — SMTP configuration for update reports via email
 - **Docker Registry Login** — Store credentials for private registries (Docker Hub, GHCR, GitLab, etc.)
+- **Timezone** — Configurable timezone for all date/time displays
 
 ### Design & UX
 - **Futuristic UI** — Glassmorphism effects, gradient accents, glow animations
