@@ -25,6 +25,13 @@
 	let selectedIndex = $state(-1);
 	let pullInputEl: HTMLInputElement | undefined = $state();
 	let suggestionsStyle = $state('');
+	let suggestionsEl: HTMLDivElement | undefined = $state();
+
+	$effect(() => {
+		if (showSuggestions && suggestionsEl && suggestionsEl.parentElement !== document.body) {
+			document.body.appendChild(suggestionsEl);
+		}
+	});
 
 	function positionSuggestions() {
 		if (!pullInputEl) return;
@@ -325,37 +332,6 @@
 					autocomplete="off"
 					class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-3 py-2.5 text-[16px] md:text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200"
 				/>
-				{#if showSuggestions && (searchResults.length > 0 || searchLoading)}
-					<div class="bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] max-h-[280px] overflow-y-auto" style={suggestionsStyle}>
-						{#if searchLoading && searchResults.length === 0}
-							<div class="px-3 py-3 text-center">
-								<div class="w-4 h-4 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin mx-auto"></div>
-							</div>
-						{/if}
-						{#each searchResults as result, i}
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
-								class="px-3 py-2.5 cursor-pointer transition-all duration-100 {i === selectedIndex ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)]'}"
-								onclick={() => selectSuggestion(result.name)}
-								onmouseenter={() => selectedIndex = i}
-							>
-								<div class="flex items-center gap-2">
-									<span class="text-sm font-medium text-[var(--text)]">{result.name}</span>
-									{#if result.is_official}
-										<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] font-medium">Official</span>
-									{/if}
-									{#if result.star_count > 0}
-										<span class="text-[10px] text-[var(--text-muted)] ml-auto">⭐ {result.star_count > 1000 ? Math.floor(result.star_count / 1000) + 'k' : result.star_count}</span>
-									{/if}
-								</div>
-								{#if result.description}
-									<div class="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">{result.description}</div>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				{/if}
 				<p class="text-[10px] text-[var(--text-muted)] mt-1.5">Docker Hub search — type to find images</p>
 			</div>
 			<div class="flex justify-end gap-2">
@@ -364,6 +340,39 @@
 			</div>
 		</form>
 	</Modal>
+{/if}
+
+{#if showSuggestions && (searchResults.length > 0 || searchLoading)}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div bind:this={suggestionsEl} class="bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] max-h-[280px] overflow-y-auto" style={suggestionsStyle}
+		onclick={(e) => e.stopPropagation()}>
+		{#if searchLoading && searchResults.length === 0}
+			<div class="px-3 py-3 text-center">
+				<div class="w-4 h-4 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin mx-auto"></div>
+			</div>
+		{/if}
+		{#each searchResults as result, i}
+			<div
+				class="px-3 py-2.5 cursor-pointer transition-all duration-100 {i === selectedIndex ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'hover:bg-[var(--bg-hover)]'}"
+				onclick={() => selectSuggestion(result.name)}
+				onmouseenter={() => selectedIndex = i}
+			>
+				<div class="flex items-center gap-2">
+					<span class="text-sm font-medium text-[var(--text)]">{result.name}</span>
+					{#if result.is_official}
+						<span class="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] font-medium">Official</span>
+					{/if}
+					{#if result.star_count > 0}
+						<span class="text-[10px] text-[var(--text-muted)] ml-auto">⭐ {result.star_count > 1000 ? Math.floor(result.star_count / 1000) + 'k' : result.star_count}</span>
+					{/if}
+				</div>
+				{#if result.description}
+					<div class="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">{result.description}</div>
+				{/if}
+			</div>
+		{/each}
+	</div>
 {/if}
 
 {#if confirmDlg}
