@@ -23,6 +23,14 @@
 	let showSuggestions = $state(false);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 	let selectedIndex = $state(-1);
+	let pullInputEl: HTMLInputElement | undefined = $state();
+	let suggestionsStyle = $state('');
+
+	function positionSuggestions() {
+		if (!pullInputEl) return;
+		const rect = pullInputEl.getBoundingClientRect();
+		suggestionsStyle = `position:fixed; left:${rect.left}px; top:${rect.bottom + 4}px; width:${rect.width}px; z-index:99999;`;
+	}
 
 	function onPullInput(val: string) {
 		pullName = val;
@@ -35,6 +43,7 @@
 		}
 		searchLoading = true;
 		showSuggestions = true;
+		positionSuggestions();
 		searchTimeout = setTimeout(async () => {
 			try {
 				const r = await api.get<{name: string; description: string; is_official: boolean; star_count: number}[]>(`/search/images?q=${encodeURIComponent(val)}`);
@@ -304,19 +313,20 @@
 			<div class="mb-4 relative">
 				<label for="pin" class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Image</label>
 				<input
+					bind:this={pullInputEl}
 					id="pin"
 					type="text"
 					value={pullName}
 					oninput={(e) => onPullInput((e.target as HTMLInputElement).value)}
 					onkeydown={handlePullKeydown}
-					onfocus={() => { if (searchResults.length > 0) showSuggestions = true; }}
+					onfocus={() => { if (searchResults.length > 0) { showSuggestions = true; positionSuggestions(); } }}
 					placeholder="nginx:latest"
 					required
 					autocomplete="off"
 					class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-3 py-2.5 text-[16px] md:text-sm text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200"
 				/>
 				{#if showSuggestions && (searchResults.length > 0 || searchLoading)}
-					<div class="absolute left-0 right-0 top-full mt-1 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 max-h-[280px] overflow-y-auto">
+					<div class="bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] max-h-[280px] overflow-y-auto" style={suggestionsStyle}>
 						{#if searchLoading && searchResults.length === 0}
 							<div class="px-3 py-3 text-center">
 								<div class="w-4 h-4 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin mx-auto"></div>
