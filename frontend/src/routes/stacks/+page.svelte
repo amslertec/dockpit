@@ -129,7 +129,7 @@
 	}
 
 	async function loadTemplates() {
-		const r = await api.get<StackTemplate[]>('/api/templates');
+		const r = await api.get<StackTemplate[]>('/templates');
 		if (r.success) templates = r.data || [];
 	}
 
@@ -143,14 +143,14 @@
 	}
 
 	async function deleteTemplate(id: string) {
-		const r = await api.del<string>(`/api/templates/${id}`);
+		const r = await api.del<string>(`/templates/${id}`);
 		if (r.success) { toasts.success($t('templates.deleted')); loadTemplates(); }
 		else toasts.error(r.error || $t('common.error'));
 	}
 
 	async function saveCustomTemplate() {
 		if (!newTemplateName.trim()) return;
-		const r = await api.post<StackTemplate>('/api/templates', {
+		const r = await api.post<StackTemplate>('/templates', {
 			name: newTemplateName.trim(),
 			description: newTemplateDesc.trim() || null,
 			category: newTemplateCategory || 'custom',
@@ -168,7 +168,7 @@
 
 	async function saveAsTemplate() {
 		if (!saveTemplateName.trim()) return;
-		const r = await api.post<StackTemplate>('/api/templates', {
+		const r = await api.post<StackTemplate>('/templates', {
 			name: saveTemplateName.trim(),
 			description: saveTemplateDesc.trim() || null,
 			category: 'custom',
@@ -224,13 +224,13 @@
 		<div class="flex items-center gap-2">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
-			<Button variant="secondary" size="sm" onclick={() => showTemplates = true}>
+			<Button variant="secondary" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
-				{$t('templates.fromTemplate')}
+				<span class="hidden md:inline">{$t('templates.fromTemplate')}</span>
 			</Button>
-			<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }}>
+			<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }} title={$t('stacks.newStack')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-				{$t('stacks.newStack')}
+				<span class="hidden md:inline">{$t('stacks.newStack')}</span>
 			</Button>
 			<button onclick={load} title={$t('common.refresh')}
 				class="inline-flex items-center justify-center w-8 h-8 border border-theme text-secondary hover:text-primary hover:border-light rounded-md transition">
