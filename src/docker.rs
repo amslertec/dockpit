@@ -514,9 +514,9 @@ impl DockerClient {
         filters.insert("type".to_string(), vec!["container".to_string()]);
         // Only relevant events — no noise from attach, connect, disconnect, exec, etc.
         filters.insert("event".to_string(), vec![
-            "start".to_string(), "stop".to_string(), "die".to_string(),
-            "kill".to_string(), "restart".to_string(), "oom".to_string(),
-            "destroy".to_string(), "health_status".to_string(),
+            "start".to_string(), "stop".to_string(),
+            "restart".to_string(), "oom".to_string(),
+            "health_status".to_string(),
         ]);
 
         let options = EventsOptions {
