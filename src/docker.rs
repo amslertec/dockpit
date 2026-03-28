@@ -122,38 +122,56 @@ impl DockerClient {
         self.docker.inspect_image(name).await
     }
 
-    /// Check if image has update available by comparing local image ID with the
-    /// remote image config digest from the registry. No image pull needed.
-    /// Returns (outdated: bool, local_id, remote_config_digest)
+    /// Check if image has update available by comparing platform manifest digests.
+    /// Uses `docker manifest inspect` locally + registry API remotely.
+    /// Returns (outdated: bool, local_digest, remote_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
         let local = self.docker.inspect_image(image).await
             .map_err(|e| format!("Image not found: {}", e))?;
-        let local_id = local.id.clone().unwrap_or_default(); // sha256:... (config digest)
         let local_digests = local.repo_digests.unwrap_or_default();
+        let local_id = local.id.clone().unwrap_or_default();
 
         if local_digests.is_empty() {
-            // Locally built image — no registry to compare against
+            return Ok((false, local_id.clone(), local_id));
+        }
+
+        // Get local amd64 manifest digest via `docker manifest inspect`
+        let local_manifest_output = tokio::process::Command::new("docker")
+            .args(["manifest", "inspect", image])
+            .output().await
+            .map_err(|e| e.to_string())?;
+
+        let local_amd64_digest = if local_manifest_output.status.success() {
+            let stdout = String::from_utf8_lossy(&local_manifest_output.stdout);
+            let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+            manifest.get("manifests").and_then(|m| m.as_array()).and_then(|arr| {
+                arr.iter().find(|m| {
+                    let p = &m["platform"];
+                    p["architecture"].as_str() == Some("amd64") && p["os"].as_str() == Some("linux")
+                        && !m.get("mediaType").and_then(|mt| mt.as_str()).unwrap_or("").contains("attestation")
+                }).and_then(|m| m["digest"].as_str().map(|s| s.to_string()))
+            }).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        if local_amd64_digest.is_empty() {
             return Ok((false, local_id.clone(), local_id));
         }
 
         let (registry, repo, tag) = parse_image_ref(image);
 
-        // Fetch remote config digest from registry (resolves manifest list → platform manifest → config)
-        let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag).await {
+        // Get remote amd64 manifest digest from registry
+        let remote_amd64_digest = match fetch_platform_digest(&registry, &repo, &tag).await {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!("Registry check failed for {}: {}", image, e);
-                return Ok((false, local_id.clone(), local_id));
+                return Ok((false, local_amd64_digest.clone(), local_amd64_digest));
             }
         };
 
-        // Compare local image ID (config digest) with remote config digest
-        // Both are in format "sha256:..."
-        let local_clean = local_id.trim_start_matches("sha256:").to_string();
-        let remote_clean = remote_config_digest.trim_start_matches("sha256:").to_string();
-
-        let outdated = !remote_clean.is_empty() && local_clean != remote_clean;
-        Ok((outdated, local_id, remote_config_digest))
+        let outdated = !remote_amd64_digest.is_empty() && local_amd64_digest != remote_amd64_digest;
+        Ok((outdated, local_amd64_digest, remote_amd64_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
@@ -664,6 +682,49 @@ fn parse_image_ref(image: &str) -> (String, String, String) {
     } else {
         // "user/repo" → Docker Hub
         ("registry-1.docker.io".into(), name.to_string(), tag.into())
+    }
+}
+
+/// Fetch the platform-specific (amd64/linux) manifest digest from registry.
+/// This digest changes ONLY when the image content changes (not affected by attestation re-signing).
+async fn fetch_platform_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build().map_err(|e| e.to_string())?;
+
+    let token = match get_registry_token(&client, registry, repo, true).await {
+        Ok(t) => t,
+        Err(_) => get_registry_token(&client, registry, repo, false).await.unwrap_or_default(),
+    };
+    let auth_header = if !token.is_empty() { format!("Bearer {}", token) } else { String::new() };
+
+    // GET manifest list / OCI index
+    let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
+    let mut req = client.get(&url)
+        .header("Accept", "application/vnd.oci.image.index.v1+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
+        .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
+    if !auth_header.is_empty() { req = req.header("Authorization", &auth_header); }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() { return Err(format!("Registry returned {}", resp.status())); }
+
+    let content_type = resp.headers().get("content-type")
+        .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let head_digest = resp.headers().get("docker-content-digest")
+        .and_then(|v| v.to_str().ok()).map(|s| s.to_string()).unwrap_or_default();
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    if content_type.contains("manifest.list") || content_type.contains("image.index") {
+        let manifests = body["manifests"].as_array().ok_or("No manifests")?;
+        let amd64 = manifests.iter().find(|m| {
+            let p = &m["platform"];
+            p["architecture"].as_str() == Some("amd64")
+                && p["os"].as_str() == Some("linux")
+                && !m["mediaType"].as_str().unwrap_or("").contains("attestation")
+        }).ok_or("No linux/amd64 manifest")?;
+        amd64["digest"].as_str().map(|s| s.to_string()).ok_or_else(|| "No digest".into())
+    } else {
+        if head_digest.is_empty() { Err("No digest".into()) } else { Ok(head_digest) }
     }
 }
 
