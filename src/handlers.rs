@@ -161,9 +161,13 @@ pub async fn login(
             let role = state.db.get_user_role(&username).unwrap_or_else(|| "admin".to_string());
             let token = auth::create_token(&id, &username, &role)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            state.db.log_audit(&username, "login", None, Some("Login successful"));
             Ok(Json(ApiResponse::ok(LoginResponse { token, username })))
         }
-        _ => Ok(Json(ApiResponse::err("Ungültige Anmeldedaten"))),
+        _ => {
+            state.db.log_audit(&req.username, "login_failed", None, Some("Invalid credentials"));
+            Ok(Json(ApiResponse::err("Ungültige Anmeldedaten")))
+        }
     }
 }
 
@@ -299,6 +303,15 @@ fn extract_claims(headers: &axum::http::HeaderMap) -> Option<Claims> {
     auth::validate_token(token).ok()
 }
 
+fn audit_user(headers: &axum::http::HeaderMap) -> String {
+    headers.get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .and_then(|token| crate::auth::validate_token(token).ok())
+        .map(|claims| claims.username)
+        .unwrap_or_else(|| "system".to_string())
+}
+
 // === User Management (super_admin only) ===
 
 pub async fn list_users(
@@ -358,7 +371,10 @@ pub async fn create_user(
 
     let user_id = uuid::Uuid::new_v4().to_string();
     match state.db.create_user_with_role(&user_id, &req.username, &password_hash, &req.role) {
-        Ok(_) => Json(ApiResponse::ok("Benutzer erstellt".to_string())),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "user_create", Some(&req.username), Some(&req.role));
+            Json(ApiResponse::ok("Benutzer erstellt".to_string()))
+        }
         Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
     }
 }
@@ -433,7 +449,10 @@ pub async fn delete_user(
     }
 
     match state.db.delete_user(&id) {
-        Ok(_) => Json(ApiResponse::ok("Benutzer gelöscht".to_string())),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "user_delete", Some(&id), None);
+            Json(ApiResponse::ok("Benutzer gelöscht".to_string()))
+        }
         Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
     }
 }
@@ -495,6 +514,7 @@ pub async fn save_settings(
         }
     }
 
+    state.db.log_audit(&audit_user(&headers), "settings_update", None, None);
     Json(ApiResponse::ok("Einstellungen gespeichert".to_string()))
 }
 
@@ -548,6 +568,7 @@ pub async fn get_update_report(
 
 pub async fn run_update_check(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> Json<ApiResponse<String>> {
     use std::sync::atomic::Ordering;
 
@@ -555,6 +576,8 @@ pub async fn run_update_check(
     if state.update_check_running.load(Ordering::SeqCst) {
         return Json(ApiResponse::err("Update-Check läuft bereits"));
     }
+
+    state.db.log_audit(&audit_user(&headers), "update_check", None, Some("Manual check started"));
 
     // Mark as running and spawn background task
     state.update_check_running.store(true, Ordering::SeqCst);
@@ -859,6 +882,7 @@ pub async fn env_containers(
 
 pub async fn env_container_action(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path((env_id, container_id)): Path<(String, String)>,
     Json(action): Json<ContainerAction>,
 ) -> Json<ApiResponse<String>> {
@@ -866,6 +890,8 @@ pub async fn env_container_action(
         Ok(e) => e,
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
+
+    state.db.log_audit(&audit_user(&headers), "container_action", Some(&container_id), Some(&action.action));
 
     if env.is_local {
         let result = match action.action.as_str() {
@@ -949,12 +975,15 @@ pub async fn env_check_container_update(
 
 pub async fn env_recreate_container(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path((env_id, container_id)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = match get_env(&state, &env_id) {
         Ok(e) => e,
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
+
+    state.db.log_audit(&audit_user(&headers), "container_recreate", Some(&container_id), None);
 
     if env.is_local {
         // Check if it's a stack container
@@ -1549,6 +1578,7 @@ pub async fn env_check_status(
 
 pub async fn create_environment(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<CreateEnvironmentRequest>,
 ) -> Json<ApiResponse<EnvironmentInfo>> {
     let url = req.url.trim_end_matches('/').to_string();
@@ -1622,7 +1652,10 @@ pub async fn create_environment(
     };
 
     match state.db.create_environment(&env) {
-        Ok(_) => Json(ApiResponse::ok(env)),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "env_create", Some(&env.name), None);
+            Json(ApiResponse::ok(env))
+        }
         Err(e) => Json(ApiResponse::err(format!("Speichern fehlgeschlagen: {}", e))),
     }
 }
@@ -1650,6 +1683,7 @@ pub async fn update_environment(
 
 pub async fn delete_environment(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
 ) -> Json<ApiResponse<String>> {
     if let Some(env) = state.db.get_environment(&id) {
@@ -1659,7 +1693,10 @@ pub async fn delete_environment(
     }
 
     match state.db.delete_environment(&id) {
-        Ok(_) => Json(ApiResponse::ok("Umgebung entfernt".to_string())),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "env_delete", Some(&id), None);
+            Json(ApiResponse::ok("Umgebung entfernt".to_string()))
+        }
         Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
     }
 }
@@ -1769,6 +1806,21 @@ pub async fn remove_registry(
     }
 }
 
+// === Audit Log ===
+
+pub async fn get_audit_log(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Json<ApiResponse<AuditResponse>> {
+    let limit = query.get("limit").and_then(|v| v.parse().ok()).unwrap_or(50i64);
+    let offset = query.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0i64);
+    let user = query.get("user").map(|s| s.as_str());
+    let action = query.get("action").map(|s| s.as_str());
+    let entries = state.db.get_audit_log(limit, offset, user, action);
+    let total = state.db.get_audit_count(user, action);
+    Json(ApiResponse::ok(AuditResponse { entries, total }))
+}
+
 // === Vulnerability Scanning ===
 
 pub async fn env_get_vulnerabilities(
@@ -1788,12 +1840,15 @@ pub async fn env_get_scan_history(
 
 pub async fn env_scan_vulnerabilities(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(env_id): Path<String>,
 ) -> Json<ApiResponse<String>> {
     let env = match get_env(&state, &env_id) {
         Ok(e) => e,
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
+
+    state.db.log_audit(&audit_user(&headers), "vuln_scan", Some(&env_id), None);
 
     let state_clone = state.clone();
     let env_id_clone = env_id.clone();
@@ -2097,6 +2152,7 @@ pub async fn list_scheduled_jobs(
 
 pub async fn create_scheduled_job(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<CreateJobRequest>,
 ) -> Json<ApiResponse<ScheduledJob>> {
     let job = ScheduledJob {
@@ -2112,7 +2168,10 @@ pub async fn create_scheduled_job(
         last_message: None,
     };
     match state.db.create_scheduled_job(&job) {
-        Ok(_) => Json(ApiResponse::ok(job)),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "job_create", Some(&job.job_type), None);
+            Json(ApiResponse::ok(job))
+        }
         Err(e) => Json(ApiResponse::err(e.to_string())),
     }
 }
@@ -2130,10 +2189,14 @@ pub async fn update_scheduled_job(
 
 pub async fn delete_scheduled_job(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
 ) -> Json<ApiResponse<String>> {
     match state.db.delete_scheduled_job(&id) {
-        Ok(_) => Json(ApiResponse::ok("Deleted".into())),
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "job_delete", Some(&id), None);
+            Json(ApiResponse::ok("Deleted".into()))
+        }
         Err(e) => Json(ApiResponse::err(e.to_string())),
     }
 }
@@ -2305,10 +2368,12 @@ pub async fn env_get_stack(
 
 pub async fn env_create_stack(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(env_id): Path<String>,
     Json(req): Json<CreateStackRequest>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    state.db.log_audit(&audit_user(&headers), "stack_create", Some(&req.name), None);
     if env.is_local {
         match state.stacks.create_stack(&req) { Ok(_) => Json(ApiResponse::ok(format!("Stack '{}' erstellt", req.name))), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, "/api/stacks", &req).await }
@@ -2327,9 +2392,11 @@ pub async fn env_update_stack(
 
 pub async fn env_delete_stack(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    state.db.log_audit(&audit_user(&headers), "stack_delete", Some(&name), None);
     if env.is_local {
         match state.stacks.delete_stack(&name) { Ok(_) => Json(ApiResponse::ok("Gelöscht".into())), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_del(&env, &format!("/api/stacks/{}", name)).await }
@@ -2337,9 +2404,11 @@ pub async fn env_delete_stack(
 
 pub async fn env_deploy_stack(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    state.db.log_audit(&audit_user(&headers), "stack_deploy", Some(&name), None);
     if env.is_local {
         match state.stacks.deploy_stack(&name).await { Ok(o) => Json(ApiResponse::ok(o)), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, &format!("/api/stacks/{}/deploy", name), &()).await }
@@ -2347,9 +2416,11 @@ pub async fn env_deploy_stack(
 
 pub async fn env_stop_stack(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path((env_id, name)): Path<(String, String)>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    state.db.log_audit(&audit_user(&headers), "stack_stop", Some(&name), None);
     if env.is_local {
         match state.stacks.stop_stack(&name).await { Ok(o) => Json(ApiResponse::ok(o)), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_post(&env, &format!("/api/stacks/{}/stop", name), &()).await }

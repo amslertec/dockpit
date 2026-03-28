@@ -2,7 +2,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo, ContainerEvent, VulnerabilityScan};
+use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, NotificationInfo, ContainerEvent, VulnerabilityScan, AuditEntry};
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -99,6 +99,15 @@ impl Database {
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT,
+                details TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS vulnerability_scans (
@@ -539,6 +548,59 @@ impl Database {
             params![result, message, next_run, id],
         )?;
         Ok(())
+    }
+
+    // === Audit Log ===
+
+    pub fn log_audit(&self, username: &str, action: &str, target: Option<&str>, details: Option<&str>) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO audit_log (username, action, target, details) VALUES (?1, ?2, ?3, ?4)",
+            params![username, action, target, details],
+        ).ok();
+    }
+
+    pub fn get_audit_log(&self, limit: i64, offset: i64, username: Option<&str>, action: Option<&str>) -> Vec<AuditEntry> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = "SELECT id, username, action, target, details, created_at FROM audit_log WHERE 1=1".to_string();
+        let mut param_values: Vec<String> = vec![];
+        if let Some(u) = username {
+            if !u.is_empty() { sql.push_str(&format!(" AND username = ?{}", param_values.len() + 1)); param_values.push(u.to_string()); }
+        }
+        if let Some(a) = action {
+            if !a.is_empty() { sql.push_str(&format!(" AND action = ?{}", param_values.len() + 1)); param_values.push(a.to_string()); }
+        }
+        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}", param_values.len() + 1, param_values.len() + 2));
+        param_values.push(limit.to_string());
+        param_values.push(offset.to_string());
+
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        let mut stmt = conn.prepare(&sql).unwrap();
+        stmt.query_map(params.as_slice(), |row| {
+            Ok(AuditEntry {
+                id: row.get(0)?, username: row.get(1)?, action: row.get(2)?,
+                target: row.get(3)?, details: row.get(4)?, created_at: row.get(5)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_audit_count(&self, username: Option<&str>, action: Option<&str>) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = "SELECT COUNT(*) FROM audit_log WHERE 1=1".to_string();
+        let mut param_values: Vec<String> = vec![];
+        if let Some(u) = username {
+            if !u.is_empty() { sql.push_str(&format!(" AND username = ?{}", param_values.len() + 1)); param_values.push(u.to_string()); }
+        }
+        if let Some(a) = action {
+            if !a.is_empty() { sql.push_str(&format!(" AND action = ?{}", param_values.len() + 1)); param_values.push(a.to_string()); }
+        }
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        conn.query_row(&sql, params.as_slice(), |row| row.get(0)).unwrap_or(0)
+    }
+
+    pub fn cleanup_old_audit(&self) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM audit_log WHERE created_at < datetime('now', '-30 days')", []).ok();
     }
 
     // === Vulnerability Scans ===

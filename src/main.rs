@@ -138,6 +138,8 @@ async fn main() {
         loop {
             // Collect events every 30 seconds (last 60s window)
             handlers::collect_events_since(scheduler_state.clone(), 60).await;
+            // Cleanup old audit log entries every hour (every 120th tick)
+            if tick % 120 == 0 { scheduler_state.db.cleanup_old_audit(); }
             // Run scheduled jobs every 60 seconds (every 2nd tick)
             if tick % 2 == 0 {
                 handlers::run_due_jobs(scheduler_state.clone()).await;
@@ -219,6 +221,7 @@ async fn main() {
         .route("/api/settings/webhook/test", post(handlers::test_webhook))
         .route("/api/updates/check", post(handlers::run_update_check))
         .route("/api/updates/report", delete(handlers::clear_update_report))
+        .route("/api/audit", get(handlers::get_audit_log))
         .route("/api/env/{env_id}/vulnerabilities", get(handlers::env_get_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/scan", post(handlers::env_scan_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/history/{image}", get(handlers::env_get_scan_history))

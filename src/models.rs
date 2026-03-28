@@ -349,6 +349,24 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Audit Log Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub username: String,
+    pub action: String,
+    pub target: Option<String>,
+    pub details: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuditResponse {
+    pub entries: Vec<AuditEntry>,
+    pub total: i64,
+}
+
 // === Vulnerability Scan Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -272,6 +272,22 @@ export interface EventsResponse {
 	total: number;
 }
 
+// === Audit Log ===
+
+export interface AuditEntry {
+	id: number;
+	username: string;
+	action: string;
+	target?: string;
+	details?: string;
+	created_at: string;
+}
+
+export interface AuditResponse {
+	entries: AuditEntry[];
+	total: number;
+}
+
 // === Vulnerability Scanning ===
 
 export interface VulnerabilityScan {
