@@ -129,6 +129,7 @@ async fn main() {
     let state = Arc::new(AppState {
         db, docker, stacks: stacks_mgr,
         update_check_running: std::sync::atomic::AtomicBool::new(false),
+        login_attempts: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     // Start scheduler loop (checks for due jobs every 60 seconds)

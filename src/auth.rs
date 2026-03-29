@@ -9,15 +9,24 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use crate::models::Claims;
 
 const JWT_SECRET_ENV: &str = "DOCKPIT_JWT_SECRET";
-const DEFAULT_SECRET: &str = "dockpit-change-me-in-production-please";
 
 fn get_secret() -> String {
-    std::env::var(JWT_SECRET_ENV).unwrap_or_else(|_| DEFAULT_SECRET.to_string())
+    match std::env::var(JWT_SECRET_ENV) {
+        Ok(secret) if secret.len() >= 16 => secret,
+        Ok(_) => {
+            tracing::error!("DOCKPIT_JWT_SECRET is too short (min 16 chars). Using insecure fallback!");
+            "dockpit-insecure-dev-only-change-me".to_string()
+        }
+        Err(_) => {
+            tracing::error!("DOCKPIT_JWT_SECRET not set! Using insecure fallback. Set this in production!");
+            "dockpit-insecure-dev-only-change-me".to_string()
+        }
+    }
 }
 
 pub fn create_token(user_id: &str, username: &str, role: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::hours(24))
+        .checked_add_signed(chrono::Duration::hours(2))
         .expect("valid timestamp")
         .timestamp() as usize;
 

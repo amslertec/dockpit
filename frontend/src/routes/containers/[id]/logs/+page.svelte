@@ -32,10 +32,13 @@
 	};
 
 	function parseAnsi(text: string): string {
+		// Security: escape ALL HTML first, then only allow safe ANSI color spans
 		return text
 			.replace(/&/g, '&amp;')
 			.replace(/</g, '&lt;')
 			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;')
 			.replace(/\x1b\[([0-9;]+)m/g, (_, codes: string) => {
 				const parts = codes.split(';');
 				if (parts.includes('0') || parts.length === 0) return '</span>';
@@ -43,8 +46,9 @@
 				for (const code of parts) {
 					const color = ansiColors[code];
 					if (color) {
-						if (color.startsWith('#')) styles.push(`color:${color}`);
-						else styles.push(color);
+						// Only allow safe CSS properties (color, font-weight, etc.)
+						if (color.startsWith('#') && /^#[0-9a-fA-F]{3,6}$/.test(color)) styles.push(`color:${color}`);
+						else if (/^(font-weight|opacity|font-style|text-decoration):[a-z0-9.]+$/.test(color)) styles.push(color);
 					}
 				}
 				return styles.length > 0 ? `<span style="${styles.join(';')}">` : '';

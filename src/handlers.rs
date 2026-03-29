@@ -20,6 +20,7 @@ pub struct AppState {
     pub docker: DockerClient,
     pub stacks: StackManager,
     pub update_check_running: std::sync::atomic::AtomicBool,
+    pub login_attempts: std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>,
 }
 
 // === Agent Proxy Helpers ===
@@ -248,6 +249,21 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest2FA>,
 ) -> Result<Json<ApiResponse<LoginResponse>>, StatusCode> {
+    // Rate limiting: max 5 attempts per 15 minutes per username
+    {
+        let mut attempts = state.login_attempts.lock().unwrap();
+        let key = req.username.to_lowercase();
+        if let Some((count, since)) = attempts.get(&key) {
+            if since.elapsed() < Duration::from_secs(900) && *count >= 5 {
+                state.db.log_audit(&req.username, "login_blocked", None, Some("Too many attempts"));
+                return Ok(Json(ApiResponse::err("Too many login attempts. Try again in 15 minutes.")));
+            }
+            if since.elapsed() >= Duration::from_secs(900) {
+                attempts.remove(&key);
+            }
+        }
+    }
+
     match state.db.get_user_by_username(&req.username) {
         Some((id, username, hash)) if auth::verify_password(&req.password, &hash) => {
             // Check TOTP if enabled
@@ -263,10 +279,19 @@ pub async fn login(
             let role = state.db.get_user_role(&username).unwrap_or_else(|| "admin".to_string());
             let token = auth::create_token(&id, &username, &role)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            // Clear rate limit on success
+            { let mut attempts = state.login_attempts.lock().unwrap(); attempts.remove(&req.username.to_lowercase()); }
             state.db.log_audit(&username, "login", None, Some("Login successful"));
             Ok(Json(ApiResponse::ok(LoginResponse { token, username })))
         }
         _ => {
+            // Increment failed attempt counter
+            {
+                let mut attempts = state.login_attempts.lock().unwrap();
+                let key = req.username.to_lowercase();
+                let entry = attempts.entry(key).or_insert((0, std::time::Instant::now()));
+                entry.0 += 1;
+            }
             state.db.log_audit(&req.username, "login_failed", None, Some("Invalid credentials"));
             Ok(Json(ApiResponse::err("Ungültige Anmeldedaten")))
         }
