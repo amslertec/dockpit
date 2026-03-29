@@ -2112,10 +2112,11 @@ pub async fn env_scan_vulnerabilities(
         } else {
             let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
             let url = format!("{}/api/containers", env.url);
-            client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
-                .send().await.ok()
-                .and_then(|r| futures_lite::future::block_on(r.json::<ApiResponse<Vec<ContainerInfo>>>()).ok())
-                .and_then(|r| r.data).unwrap_or_default()
+            match client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+                Ok(resp) => resp.json::<ApiResponse<Vec<ContainerInfo>>>().await
+                    .ok().and_then(|r| r.data).unwrap_or_default(),
+                Err(_) => vec![],
+            }
         };
 
         // Unique images only
@@ -2127,15 +2128,35 @@ pub async fn env_scan_vulnerabilities(
             let result = if env.is_local {
                 scout_scan_image(&c.image).await
             } else {
-                // Proxy to agent
+                // Proxy to agent — parse as serde_json::Value first then extract fields
                 let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().unwrap();
                 let url = format!("{}/api/vulnerabilities/scan", env.url);
                 let body = serde_json::json!({ "image": c.image });
                 match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
                     .json(&body).send().await
                 {
-                    Ok(resp) => resp.json::<ApiResponse<VulnerabilityScan>>().await
-                        .ok().and_then(|r| r.data).ok_or_else(|| "Agent scan failed".to_string()),
+                    Ok(resp) => {
+                        match resp.json::<ApiResponse<serde_json::Value>>().await {
+                            Ok(r) if r.success => {
+                                if let Some(data) = r.data {
+                                    Ok(VulnerabilityScan {
+                                        id: None,
+                                        env_id: String::new(),
+                                        image: data["image"].as_str().unwrap_or(&c.image).to_string(),
+                                        critical: data["critical"].as_i64().unwrap_or(0) as i32,
+                                        high: data["high"].as_i64().unwrap_or(0) as i32,
+                                        medium: data["medium"].as_i64().unwrap_or(0) as i32,
+                                        low: data["low"].as_i64().unwrap_or(0) as i32,
+                                        total: data["total"].as_i64().unwrap_or(0) as i32,
+                                        cves_json: data["cves_json"].as_str().map(|s| s.to_string()),
+                                        scanned_at: None,
+                                    })
+                                } else { Err("No data from agent".to_string()) }
+                            }
+                            Ok(r) => Err(r.error.unwrap_or_else(|| "Agent scan failed".to_string())),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    }
                     Err(e) => Err(e.to_string()),
                 }
             };
@@ -2175,8 +2196,27 @@ pub async fn env_scan_single_image(
         match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
             .json(&body).send().await
         {
-            Ok(resp) => resp.json::<ApiResponse<VulnerabilityScan>>().await
-                .ok().and_then(|r| r.data).ok_or_else(|| "Agent scan failed".to_string()),
+            Ok(resp) => {
+                match resp.json::<ApiResponse<serde_json::Value>>().await {
+                    Ok(r) if r.success => {
+                        if let Some(data) = r.data {
+                            Ok(VulnerabilityScan {
+                                id: None, env_id: String::new(),
+                                image: data["image"].as_str().unwrap_or(&decoded_image).to_string(),
+                                critical: data["critical"].as_i64().unwrap_or(0) as i32,
+                                high: data["high"].as_i64().unwrap_or(0) as i32,
+                                medium: data["medium"].as_i64().unwrap_or(0) as i32,
+                                low: data["low"].as_i64().unwrap_or(0) as i32,
+                                total: data["total"].as_i64().unwrap_or(0) as i32,
+                                cves_json: data["cves_json"].as_str().map(|s| s.to_string()),
+                                scanned_at: None,
+                            })
+                        } else { Err("No data from agent".to_string()) }
+                    }
+                    Ok(r) => Err(r.error.unwrap_or_else(|| "Agent scan failed".to_string())),
+                    Err(e) => Err(e.to_string()),
+                }
+            }
             Err(e) => Err(e.to_string()),
         }
     };
