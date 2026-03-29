@@ -129,6 +129,15 @@
 					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
 				</div>
 
+				<div class="border-t border-[var(--border)] pt-6 mt-6">
+					<h3 class="text-sm font-semibold text-[var(--text)] mb-2">{$t('settings.prometheus')}</h3>
+					<p class="text-xs text-[var(--text-secondary)] mb-3">{$t('settings.prometheusDesc')}</p>
+					<div class="bg-[var(--bg-3)] border border-[var(--border)] rounded-[var(--radius-md)] p-3 font-mono text-[11px] text-[var(--text-secondary)] select-all break-all">
+						http://&lt;your-server&gt;:5533/api/metrics
+					</div>
+					<p class="text-[10px] text-[var(--text-muted)] mt-2">{$t('settings.prometheusHint')}</p>
+				</div>
+
 			<!-- Update Monitor -->
 			{:else if activeTab === 1}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.autoCheck')}</h3>

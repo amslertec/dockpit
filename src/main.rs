@@ -155,6 +155,7 @@ async fn main() {
     // Public routes
     let public_routes = Router::new()
         .route("/api/status", get(handlers::get_status))
+        .route("/api/metrics", get(handlers::prometheus_metrics))
         .route("/api/setup", post(handlers::setup))
         .route("/api/login", post(handlers::login));
 

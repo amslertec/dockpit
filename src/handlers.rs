@@ -103,6 +103,108 @@ fn get_env(state: &AppState, env_id: &str) -> Result<EnvironmentInfo, Json<ApiRe
     state.db.get_environment(env_id).ok_or_else(|| Json(ApiResponse::err("Umgebung nicht gefunden")))
 }
 
+// === Prometheus Metrics ===
+
+pub async fn prometheus_metrics(
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let mut lines = Vec::new();
+
+    // Environments
+    let envs = state.db.get_environments();
+    let online = envs.iter().filter(|e| e.is_local || e.status == "online").count();
+    let offline = envs.len() - online;
+    lines.push("# HELP dockpit_environments_total Total environments by status".into());
+    lines.push("# TYPE dockpit_environments_total gauge".into());
+    lines.push(format!("dockpit_environments_total{{status=\"online\"}} {}", online));
+    lines.push(format!("dockpit_environments_total{{status=\"offline\"}} {}", offline));
+
+    // Per-environment stats
+    lines.push("# HELP dockpit_containers_total Containers by environment and state".into());
+    lines.push("# TYPE dockpit_containers_total gauge".into());
+    lines.push("# HELP dockpit_images_total Images by environment".into());
+    lines.push("# TYPE dockpit_images_total gauge".into());
+    lines.push("# HELP dockpit_volumes_total Volumes by environment".into());
+    lines.push("# TYPE dockpit_volumes_total gauge".into());
+    lines.push("# HELP dockpit_networks_total Networks by environment".into());
+    lines.push("# TYPE dockpit_networks_total gauge".into());
+
+    for env in &envs {
+        let ename = env.name.replace('"', "");
+        if env.is_local {
+            let stats = state.docker.get_dashboard_stats().await;
+            lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"running\"}} {}", ename, stats.containers_running));
+            lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"stopped\"}} {}", ename, stats.containers_stopped));
+            lines.push(format!("dockpit_images_total{{env=\"{}\"}} {}", ename, stats.images_total));
+            lines.push(format!("dockpit_volumes_total{{env=\"{}\"}} {}", ename, stats.volumes_total));
+            lines.push(format!("dockpit_networks_total{{env=\"{}\"}} {}", ename, stats.networks_total));
+        } else {
+            let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
+            let url = format!("{}/api/system", env.url);
+            if let Ok(resp) = client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+                if let Ok(data) = resp.json::<ApiResponse<SystemInfo>>().await {
+                    if let Some(info) = data.data {
+                        lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"running\"}} {}", ename, info.containers_running));
+                        lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"stopped\"}} {}", ename, info.containers_stopped));
+                        lines.push(format!("dockpit_images_total{{env=\"{}\"}} {}", ename, info.images));
+                        lines.push(format!("dockpit_volumes_total{{env=\"{}\"}} {}", ename, info.volumes));
+                        lines.push(format!("dockpit_networks_total{{env=\"{}\"}} {}", ename, info.networks));
+                    }
+                }
+            }
+        }
+    }
+
+    // Stacks (local only for speed)
+    if let Ok(stacks) = state.stacks.list_stacks().await {
+        let running = stacks.iter().filter(|s| s.status == "running").count();
+        let stopped = stacks.iter().filter(|s| s.status == "stopped").count();
+        let partial = stacks.iter().filter(|s| s.status == "partial").count();
+        lines.push("# HELP dockpit_stacks_total Stacks by status".into());
+        lines.push("# TYPE dockpit_stacks_total gauge".into());
+        lines.push(format!("dockpit_stacks_total{{status=\"running\"}} {}", running));
+        lines.push(format!("dockpit_stacks_total{{status=\"stopped\"}} {}", stopped));
+        lines.push(format!("dockpit_stacks_total{{status=\"partial\"}} {}", partial));
+    }
+
+    // Updates
+    let updates = state.db.get_latest_update_checks();
+    let outdated = updates.iter().filter(|u| u.outdated).count();
+    lines.push("# HELP dockpit_updates_outdated Containers with outdated images".into());
+    lines.push("# TYPE dockpit_updates_outdated gauge".into());
+    lines.push(format!("dockpit_updates_outdated {}", outdated));
+
+    // Users
+    let users = state.db.list_users().len();
+    lines.push("# HELP dockpit_users_total Total users".into());
+    lines.push("# TYPE dockpit_users_total gauge".into());
+    lines.push(format!("dockpit_users_total {}", users));
+
+    // Notifications
+    let unread = state.db.get_unread_count();
+    lines.push("# HELP dockpit_notifications_unread Unread notifications".into());
+    lines.push("# TYPE dockpit_notifications_unread gauge".into());
+    lines.push(format!("dockpit_notifications_unread {}", unread));
+
+    // Scheduled jobs
+    let jobs = state.db.get_scheduled_jobs(None);
+    let enabled = jobs.iter().filter(|j| j.enabled).count();
+    let disabled = jobs.len() - enabled;
+    lines.push("# HELP dockpit_scheduled_jobs_total Scheduled jobs by status".into());
+    lines.push("# TYPE dockpit_scheduled_jobs_total gauge".into());
+    lines.push(format!("dockpit_scheduled_jobs_total{{status=\"enabled\"}} {}", enabled));
+    lines.push(format!("dockpit_scheduled_jobs_total{{status=\"disabled\"}} {}", disabled));
+
+    lines.push(String::new()); // trailing newline
+
+    let body = lines.join("\n");
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        body,
+    ).into_response()
+}
+
 // === Setup & Auth ===
 
 pub async fn get_status(State(state): State<Arc<AppState>>) -> Json<AppStatus> {

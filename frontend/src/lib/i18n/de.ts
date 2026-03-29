@@ -349,6 +349,10 @@ export const de: Record<string, string> = {
 	'settings.useTLS': 'TLS/STARTTLS verwenden',
 	'settings.timezone': 'Zeitzone',
 	'settings.timezoneDesc': 'Stelle deine Zeitzone für alle Datums- und Zeitanzeigen ein',
+	'settings.prometheus': 'Prometheus Metriken',
+	'settings.prometheusDesc': 'DockPit stellt einen Prometheus-kompatiblen Metriken-Endpoint bereit. Füge diese URL als Scrape-Target in deiner Prometheus-Konfiguration hinzu, um Container-Statistiken, Health-Daten und System-Metriken für Langzeit-Monitoring in Grafana zu erfassen.',
+	'settings.prometheusHint': 'In prometheus.yml hinzufügen: scrape_configs → static_configs → targets. Keine Authentifizierung nötig.',
+	'settings.prometheusExample': 'Beispiel prometheus.yml Konfiguration:',
 
 	// === Updates ===
 	'updates.title': 'Update Monitor',

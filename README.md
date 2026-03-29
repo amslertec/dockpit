@@ -120,6 +120,13 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Docker Registry Login** — Store credentials for private registries (Docker Hub, GHCR, GitLab, etc.)
 - **Timezone** — Configurable timezone for all date/time displays
 
+### Prometheus Metrics
+- **`/api/metrics` Endpoint** — Prometheus-compatible metrics in text exposition format
+- **No Authentication** — Easy scraping without token configuration
+- **Metrics Exposed:** Container counts, image/volume/network totals, health status, update status, stack status, users, notifications, scheduled jobs
+- **Per-Environment** — Metrics labeled by environment/server name
+- **Grafana Ready** — Add as Prometheus data source for long-term dashboards
+
 ### Design & UX
 - **Futuristic UI** — Glassmorphism effects, gradient accents, glow animations
 - **Dark & Light Mode** — Perfectly tuned color palettes for both themes
