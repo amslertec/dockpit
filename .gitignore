@@ -37,3 +37,4 @@ dockpit_data/
 
 # === Claude Code ===
 .claude/
+SECURITY_AUDIT.md
