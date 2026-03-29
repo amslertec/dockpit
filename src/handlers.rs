@@ -25,6 +25,7 @@ pub struct AppState {
     pub vuln_scan_done: std::sync::atomic::AtomicUsize,
     pub login_attempts: std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>,
     pub ws_tokens: std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    pub env_cache: std::sync::RwLock<Option<Vec<EnvironmentInfo>>>,
 }
 
 // === Agent Proxy Helpers ===
@@ -135,6 +136,9 @@ pub async fn prometheus_metrics(
     lines.push("# HELP dockpit_networks_total Networks by environment".into());
     lines.push("# TYPE dockpit_networks_total gauge".into());
 
+    // Collect per-env stats in parallel
+    let mut remote_handles = Vec::new();
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
     for env in &envs {
         let ename = env.name.replace('"', "");
         if env.is_local {
@@ -145,19 +149,30 @@ pub async fn prometheus_metrics(
             lines.push(format!("dockpit_volumes_total{{env=\"{}\"}} {}", ename, stats.volumes_total));
             lines.push(format!("dockpit_networks_total{{env=\"{}\"}} {}", ename, stats.networks_total));
         } else {
-            let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().unwrap();
             let url = format!("{}/api/system", env.url);
-            if let Ok(resp) = client.get(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
-                if let Ok(data) = resp.json::<ApiResponse<SystemInfo>>().await {
-                    if let Some(info) = data.data {
-                        lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"running\"}} {}", ename, info.containers_running));
-                        lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"stopped\"}} {}", ename, info.containers_stopped));
-                        lines.push(format!("dockpit_images_total{{env=\"{}\"}} {}", ename, info.images));
-                        lines.push(format!("dockpit_volumes_total{{env=\"{}\"}} {}", ename, info.volumes));
-                        lines.push(format!("dockpit_networks_total{{env=\"{}\"}} {}", ename, info.networks));
+            let token = env.agent_token.clone().unwrap_or_default();
+            let c = client.clone();
+            let name = ename.clone();
+            remote_handles.push(tokio::spawn(async move {
+                let mut env_lines = Vec::new();
+                if let Ok(resp) = c.get(&url).header("X-Agent-Token", &token).send().await {
+                    if let Ok(data) = resp.json::<ApiResponse<SystemInfo>>().await {
+                        if let Some(info) = data.data {
+                            env_lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"running\"}} {}", name, info.containers_running));
+                            env_lines.push(format!("dockpit_containers_total{{env=\"{}\",state=\"stopped\"}} {}", name, info.containers_stopped));
+                            env_lines.push(format!("dockpit_images_total{{env=\"{}\"}} {}", name, info.images));
+                            env_lines.push(format!("dockpit_volumes_total{{env=\"{}\"}} {}", name, info.volumes));
+                            env_lines.push(format!("dockpit_networks_total{{env=\"{}\"}} {}", name, info.networks));
+                        }
                     }
                 }
-            }
+                env_lines
+            }));
+        }
+    }
+    for handle in remote_handles {
+        if let Ok(env_lines) = handle.await {
+            lines.extend(env_lines);
         }
     }
 
@@ -951,16 +966,25 @@ pub async fn dashboard(State(state): State<Arc<AppState>>) -> Json<ApiResponse<D
         .build()
         .unwrap();
 
-    for env in &mut envs {
-        if env.is_local {
-            env.status = "online".to_string();
-        } else {
+    // Check remote environments in parallel
+    let mut handles = Vec::new();
+    for (i, env) in envs.iter().enumerate() {
+        if !env.is_local {
             let url = format!("{}/health", env.url);
-            env.status = match client.get(&url).send().await {
-                Ok(r) if r.status().is_success() => "online".to_string(),
-                _ => "offline".to_string(),
-            };
+            let c = client.clone();
+            handles.push((i, tokio::spawn(async move {
+                match c.get(&url).send().await {
+                    Ok(r) if r.status().is_success() => "online".to_string(),
+                    _ => "offline".to_string(),
+                }
+            })));
         }
+    }
+    for env in &mut envs {
+        if env.is_local { env.status = "online".to_string(); }
+    }
+    for (i, handle) in handles {
+        envs[i].status = handle.await.unwrap_or_else(|_| "offline".to_string());
     }
 
     stats.environments = envs;
@@ -1727,12 +1751,23 @@ pub async fn env_prune_networks(
 pub async fn list_environments(
     State(state): State<Arc<AppState>>,
 ) -> Json<ApiResponse<Vec<EnvironmentInfo>>> {
-    let mut envs = state.db.get_environments();
-    // Return instantly with "unknown" status - frontend fetches status separately
+    // Use cached environment list if available
+    let mut envs = {
+        let cache = state.env_cache.read().unwrap();
+        cache.clone()
+    }.unwrap_or_else(|| {
+        let envs = state.db.get_environments();
+        *state.env_cache.write().unwrap() = Some(envs.clone());
+        envs
+    });
     for env in &mut envs {
         env.status = if env.is_local { "online".to_string() } else { "unknown".to_string() };
     }
     Json(ApiResponse::ok(envs))
+}
+
+fn invalidate_env_cache(state: &AppState) {
+    *state.env_cache.write().unwrap() = None;
 }
 
 /// Separate endpoint to check status of a single environment (fast, non-blocking)
@@ -1840,6 +1875,7 @@ pub async fn create_environment(
 
     match state.db.create_environment(&env) {
         Ok(_) => {
+            invalidate_env_cache(&state);
             state.db.log_audit(&audit_user(&headers), "env_create", Some(&env.name), None);
             Json(ApiResponse::ok(env))
         }
@@ -1855,15 +1891,14 @@ pub async fn update_environment(
     let existing = state.db.get_environment(&id);
     if let Some(ref env) = existing {
         if env.is_local {
-            // Lokal: nur Name ändern, URL beibehalten
             return match state.db.update_environment(&id, &req.name, &env.url) {
-                Ok(_) => Json(ApiResponse::ok("Umgebung aktualisiert".to_string())),
+                Ok(_) => { invalidate_env_cache(&state); Json(ApiResponse::ok("Umgebung aktualisiert".to_string())) }
                 Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
             };
         }
     }
     match state.db.update_environment(&id, &req.name, &req.url) {
-        Ok(_) => Json(ApiResponse::ok("Umgebung aktualisiert".to_string())),
+        Ok(_) => { invalidate_env_cache(&state); Json(ApiResponse::ok("Umgebung aktualisiert".to_string())) }
         Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
     }
 }
@@ -1881,6 +1916,7 @@ pub async fn delete_environment(
 
     match state.db.delete_environment(&id) {
         Ok(_) => {
+            invalidate_env_cache(&state);
             state.db.log_audit(&audit_user(&headers), "env_delete", Some(&env_name(&state, &id)), None);
             Json(ApiResponse::ok("Umgebung entfernt".to_string()))
         }

@@ -26,9 +26,22 @@ struct FrontendAssets;
 fn serve_file(path: &str) -> Option<Response> {
     FrontendAssets::get(path).map(|file| {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
+        // Hashed assets (JS/CSS with content hash in filename) are immutable
+        let cache_control = if path.contains("/_app/") || path.contains("/immutable/") {
+            "public, max-age=31536000, immutable"
+        } else if path.ends_with(".svg") || path.ends_with(".png") || path.ends_with(".ico") || path.ends_with(".woff2") {
+            "public, max-age=86400"
+        } else if path.ends_with(".html") {
+            "no-cache"
+        } else {
+            "public, max-age=3600"
+        };
         (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+            [
+                (header::CONTENT_TYPE, mime.as_ref().to_string()),
+                (header::CACHE_CONTROL, cache_control.to_string()),
+            ],
             file.data.to_vec(),
         )
             .into_response()
@@ -134,6 +147,7 @@ async fn main() {
         vuln_scan_done: std::sync::atomic::AtomicUsize::new(0),
         login_attempts: std::sync::Mutex::new(std::collections::HashMap::new()),
         ws_tokens: std::sync::Mutex::new(std::collections::HashMap::new()),
+        env_cache: std::sync::RwLock::new(None),
     });
 
     // Start scheduler loop (checks for due jobs every 60 seconds)
