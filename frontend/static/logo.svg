@@ -6,58 +6,54 @@
       <stop offset="100%" stop-color="#0a3ba8"/>
     </linearGradient>
     <linearGradient id="glow" x1="0.5" y1="0" x2="0.5" y2="1">
-      <stop offset="0%" stop-color="#6db3ff" stop-opacity="0.3"/>
+      <stop offset="0%" stop-color="#6db3ff" stop-opacity="0.25"/>
       <stop offset="100%" stop-color="#1a6bff" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="wheel" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#c8dfff"/>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5effa0"/>
+      <stop offset="100%" stop-color="#2dd47a"/>
     </linearGradient>
   </defs>
 
   <!-- Background -->
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="280" rx="112" fill="url(#glow)"/>
 
-  <!-- Subtle glow at top -->
-  <rect width="512" height="256" rx="112" fill="url(#glow)"/>
+  <!-- Dashboard frame (rounded monitor/cockpit screen) -->
+  <rect x="80" y="100" width="352" height="272" rx="28" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="14"/>
 
-  <!-- Ship wheel (Pit = Cockpit/Control) -->
-  <g transform="translate(256,248)">
-    <!-- Outer ring -->
-    <circle cx="0" cy="0" r="130" fill="none" stroke="url(#wheel)" stroke-width="18" opacity="0.9"/>
+  <!-- Screen top bar -->
+  <rect x="100" y="118" width="312" height="8" rx="4" fill="rgba(255,255,255,0.2)"/>
 
-    <!-- Inner hub -->
-    <circle cx="0" cy="0" r="36" fill="none" stroke="url(#wheel)" stroke-width="14" opacity="0.95"/>
-
-    <!-- Spokes (8 directions) -->
-    <g stroke="url(#wheel)" stroke-width="14" stroke-linecap="round" opacity="0.9">
-      <line x1="0" y1="-42" x2="0" y2="-124"/>
-      <line x1="0" y1="42" x2="0" y2="124"/>
-      <line x1="-42" y1="0" x2="-124" y2="0"/>
-      <line x1="42" y1="0" x2="124" y2="0"/>
-      <line x1="-30" y1="-30" x2="-88" y2="-88"/>
-      <line x1="30" y1="-30" x2="88" y2="-88"/>
-      <line x1="-30" y1="30" x2="-88" y2="88"/>
-      <line x1="30" y1="30" x2="88" y2="88"/>
-    </g>
-
-    <!-- Handle knobs on cardinal spokes -->
-    <g fill="url(#wheel)" opacity="0.95">
-      <circle cx="0" cy="-140" r="14"/>
-      <circle cx="0" cy="140" r="14"/>
-      <circle cx="-140" cy="0" r="14"/>
-      <circle cx="140" cy="0" r="14"/>
-      <circle cx="-97" cy="-97" r="12"/>
-      <circle cx="97" cy="-97" r="12"/>
-      <circle cx="-97" cy="97" r="12"/>
-      <circle cx="97" cy="97" r="12"/>
-    </g>
+  <!-- Container grid (3x2 blocks = Docker containers on dashboard) -->
+  <g>
+    <rect x="112" y="152" width="92" height="56" rx="10" fill="rgba(255,255,255,0.88)"/>
+    <rect x="214" y="152" width="92" height="56" rx="10" fill="rgba(255,255,255,0.65)"/>
+    <rect x="316" y="152" width="92" height="56" rx="10" fill="rgba(255,255,255,0.45)"/>
+    <rect x="112" y="220" width="92" height="56" rx="10" fill="rgba(255,255,255,0.55)"/>
+    <rect x="214" y="220" width="92" height="56" rx="10" fill="rgba(255,255,255,0.40)"/>
+    <rect x="316" y="220" width="92" height="56" rx="10" fill="rgba(255,255,255,0.25)"/>
   </g>
 
-  <!-- Docker container blocks (top-right area, like cargo on a ship) -->
-  <g opacity="0.92">
-    <rect x="326" y="82" width="44" height="32" rx="5" fill="#5effa0"/>
-    <rect x="378" y="82" width="44" height="32" rx="5" fill="#4fd6ff"/>
-    <rect x="352" y="44" width="44" height="32" rx="5" fill="#ffd84f"/>
+  <!-- Status dots on containers (green = running, yellow = warning) -->
+  <circle cx="136" cy="170" r="7" fill="#5effa0"/>
+  <circle cx="238" cy="170" r="7" fill="#5effa0"/>
+  <circle cx="340" cy="170" r="7" fill="#ffd84f"/>
+  <circle cx="136" cy="238" r="7" fill="#5effa0"/>
+  <circle cx="238" cy="238" r="7" fill="#ff6b6b"/>
+  <circle cx="340" cy="238" r="7" fill="#5effa0"/>
+
+  <!-- Mini bar charts in first container -->
+  <g opacity="0.7">
+    <rect x="155" y="188" width="8" height="12" rx="2" fill="white"/>
+    <rect x="167" y="183" width="8" height="17" rx="2" fill="white"/>
+    <rect x="179" y="178" width="8" height="22" rx="2" fill="white"/>
+  </g>
+
+  <!-- Gauge/meter needle (cockpit instrument = "Pit") -->
+  <g transform="translate(256,420)">
+    <path d="M-60,0 A60,60 0 0,1 60,0" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="8" stroke-linecap="round"/>
+    <line x1="0" y1="0" x2="32" y2="-42" stroke="url(#accent)" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="8" fill="white"/>
   </g>
 </svg>

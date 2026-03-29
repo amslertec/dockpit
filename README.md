@@ -20,7 +20,7 @@
 
 ## What is DockPit?
 
-DockPit is a **self-hosted alternative to Portainer** built from the ground up with Rust and SvelteKit. It gives you full control over your Docker infrastructure through a sleek, responsive web interface — without sending any data to external services.
+DockPit is a **self-hosted Docker management platform** built from the ground up with Rust and SvelteKit. It gives you full control over your Docker infrastructure through a sleek, responsive web interface — without sending any data to external services.
 
 **Why DockPit?**
 
