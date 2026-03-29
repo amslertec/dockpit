@@ -29,9 +29,29 @@
 		perPage === 0 ? scans : scans.slice((page - 1) * perPage, page * perPage)
 	);
 
-	onMount(() => { loadScans(); });
+	onMount(() => {
+		loadScans();
+		// Check if a scan might be running (if we had scanning state before reload)
+		// Start polling briefly to catch any in-progress scan
+		checkIfScanRunning();
+	});
 	onDestroy(() => { if (pollInterval) clearInterval(pollInterval); });
 	$effect(() => { $selectedEnv; loadScans(); });
+
+	async function checkIfScanRunning() {
+		// Poll a few times to detect if scan count is changing (= scan in progress)
+		const r1 = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
+		const count1 = r1.data?.length || 0;
+		await new Promise(resolve => setTimeout(resolve, 3000));
+		const r2 = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
+		const count2 = r2.data?.length || 0;
+		if (r2.success && r2.data) scans = r2.data;
+		if (count2 > count1) {
+			// Scan is running
+			scanning = true;
+			startPolling();
+		}
+	}
 
 	function startPolling() {
 		if (pollInterval) clearInterval(pollInterval);
@@ -68,6 +88,7 @@
 					stopPolling();
 					scanning = false;
 					pollStableCount = 0;
+					toasts.success($t('vuln.scanComplete'));
 				}
 			} else {
 				pollStableCount = 0;
@@ -87,6 +108,11 @@
 			toasts.error(r.error || $t('common.error'));
 			scanning = false;
 		}
+	}
+
+	function cancelScan() {
+		scanning = false;
+		stopPolling();
 	}
 
 	async function scanImage(image: string) {
@@ -146,12 +172,27 @@
 				<svg class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 				{$t('common.refresh')}
 			</Button>
-			<Button size="sm" variant="primary" onclick={scanAll} disabled={scanning} loading={scanning}>
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				{scanning ? $t('vuln.scanning') : $t('vuln.scanAll')}
-			</Button>
+			{#if scanning}
+				<Button size="sm" variant="danger" onclick={cancelScan}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					{$t('common.cancel')}
+				</Button>
+			{:else}
+				<Button size="sm" variant="primary" onclick={scanAll}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+					{$t('vuln.scanAll')}
+				</Button>
+			{/if}
 		</div>
 	</div>
+
+	<!-- Scanning Banner -->
+	{#if scanning}
+		<div class="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[var(--accent-bg)] mb-3">
+			<div class="w-4 h-4 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin shrink-0"></div>
+			<span class="text-xs text-[var(--accent)] font-medium">{$t('vuln.scanRunning')}</span>
+		</div>
+	{/if}
 
 	<!-- Info Banner -->
 	<div class="flex items-start gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[var(--accent-bg)]">

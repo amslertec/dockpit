@@ -108,7 +108,7 @@
 				{/if}
 			</button>
 			{#if showNotifications}
-				<NotificationPanel onclose={() => showNotifications = false} />
+				<NotificationPanel onclose={() => showNotifications = false} onchange={fetchUnreadCount} />
 			{/if}
 		</div>
 

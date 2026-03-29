@@ -8,8 +8,9 @@
 
 	interface Props {
 		onclose: () => void;
+		onchange?: () => void;
 	}
-	let { onclose }: Props = $props();
+	let { onclose, onchange }: Props = $props();
 
 	let notifications = $state<NotificationInfo[]>([]);
 	let loading = $state(true);
@@ -25,11 +26,13 @@
 	async function markAsRead(id: number) {
 		await api.post(`/notifications/${id}/read`, {});
 		notifications = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+		onchange?.();
 	}
 
 	async function markAllAsRead() {
 		await api.post('/notifications/read-all', {});
 		notifications = notifications.map((n) => ({ ...n, read: true }));
+		onchange?.();
 	}
 
 	async function deleteNotification(id: number) {

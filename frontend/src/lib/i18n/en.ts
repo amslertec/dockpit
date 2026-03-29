@@ -589,6 +589,8 @@ export const en: Record<string, string> = {
 	'vuln.scanAll': 'Scan All Images',
 	'vuln.scan': 'Scan',
 	'vuln.scanning': 'Scanning...',
+	'vuln.scanRunning': 'Vulnerability scan in progress — results appear automatically',
+	'vuln.scanComplete': 'Vulnerability scan complete',
 	'vuln.image': 'Image',
 	'vuln.critical': 'Critical',
 	'vuln.high': 'High',

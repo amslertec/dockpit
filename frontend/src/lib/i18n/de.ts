@@ -570,6 +570,8 @@ export const de: Record<string, string> = {
 	'vuln.scanAll': 'Alle Images scannen',
 	'vuln.scan': 'Scannen',
 	'vuln.scanning': 'Scanne...',
+	'vuln.scanRunning': 'Schwachstellen-Scan läuft — Ergebnisse erscheinen automatisch',
+	'vuln.scanComplete': 'Schwachstellen-Scan abgeschlossen',
 	'vuln.image': 'Image',
 	'vuln.critical': 'Kritisch',
 	'vuln.high': 'Hoch',
