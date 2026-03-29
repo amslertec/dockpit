@@ -33,6 +33,14 @@ A modern, futuristic Docker container management tool with a beautiful web UI. M
 - **Live Updates** — Results appear in real-time during active scans
 - **Requires Docker Hub Login** — Free Personal plan sufficient (info banner on page)
 
+### Health Check Dashboard
+- **Dedicated /health Page** — Overview of all containers with Docker HEALTHCHECK
+- **Status Overview** — Healthy (green), Unhealthy (red), Starting (yellow), No healthcheck (grey)
+- **Health Details** — Check command, interval, retries, failing streak
+- **Health Log** — Expandable rows showing last 5 check results with exit codes and output
+- **Auto-Refresh** — Updates every 15 seconds
+- **Per-Server View** — Filtered by currently selected environment
+
 ### Audit Log
 - **Action Tracking** — Every user action logged with timestamp, user, action, target
 - **17 Action Types** — Login, container ops, stack ops, user management, settings, scans
