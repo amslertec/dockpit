@@ -49,6 +49,7 @@
 		'/events': 'events.title',
 		'/vulnerabilities': 'vuln.title',
 		'/audit': 'audit.title',
+		'/health': 'health.title',
 		'/profile': 'nav.profile'
 	};
 	const pageTitle = $derived(titleKeys[$page.url.pathname] ? $t(titleKeys[$page.url.pathname]) : 'DockPit');

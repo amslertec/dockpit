@@ -174,6 +174,7 @@ async fn main() {
         .route("/api/env/{env_id}/stats", get(handlers::env_stats))
         .route("/api/env/{env_id}/containers", get(handlers::env_containers))
         .route("/api/env/{env_id}/containers/{container_id}/logs", get(handlers::env_container_logs))
+        .route("/api/env/{env_id}/health", get(handlers::env_health_checks))
         .route("/api/search/images", get(handlers::search_docker_hub))
         .route("/api/env/{env_id}/events", get(handlers::env_get_events))
         .route("/api/env/{env_id}/events/refresh", post(handlers::env_refresh_events))

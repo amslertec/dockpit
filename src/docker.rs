@@ -524,6 +524,76 @@ impl DockerClient {
         }
     }
 
+    pub async fn get_container_health(&self) -> Vec<ContainerHealth> {
+        let containers = match self.list_containers().await {
+            Ok(c) => c,
+            Err(_) => return vec![],
+        };
+
+        let mut results = Vec::new();
+        for c in &containers {
+            let inspect = match self.docker.inspect_container(&c.id, None).await {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+
+            let state = inspect.state.as_ref();
+            let health = state.and_then(|s| s.health.as_ref());
+
+            let health_status = health
+                .and_then(|h| h.status.as_ref())
+                .map(|s| format!("{:?}", s).to_lowercase())
+                .unwrap_or_else(|| "none".into());
+
+            let health_config = inspect.config.as_ref().and_then(|cfg| cfg.healthcheck.as_ref());
+
+            let health_check = health_config
+                .and_then(|hc| hc.test.as_ref())
+                .map(|t| t.join(" "));
+
+            let health_interval = health_config
+                .and_then(|hc| hc.interval)
+                .map(|ns| format!("{}s", ns / 1_000_000_000));
+
+            let health_retries = health_config
+                .and_then(|hc| hc.retries)
+                .map(|r| r as i64);
+
+            let failing_streak = health
+                .and_then(|h| h.failing_streak)
+                .unwrap_or(0);
+
+            let health_log: Vec<HealthLogEntry> = health
+                .and_then(|h| h.log.as_ref())
+                .map(|logs| {
+                    logs.iter().rev().take(5).map(|entry| {
+                        HealthLogEntry {
+                            start: entry.start.clone().unwrap_or_default(),
+                            end: entry.end.clone().unwrap_or_default(),
+                            exit_code: entry.exit_code.unwrap_or(-1),
+                            output: entry.output.clone().unwrap_or_default().trim().to_string(),
+                        }
+                    }).collect()
+                })
+                .unwrap_or_default();
+
+            results.push(ContainerHealth {
+                id: c.id.clone(),
+                name: c.name.clone(),
+                image: c.image.clone(),
+                state: c.state.clone(),
+                health_status,
+                health_check,
+                health_interval,
+                health_retries,
+                health_log,
+                failing_streak,
+            });
+        }
+
+        results
+    }
+
     pub async fn get_recent_events(&self, since_secs: i64) -> Vec<ContainerEvent> {
         let since = chrono::Utc::now().timestamp() - since_secs;
         let until = chrono::Utc::now().timestamp();

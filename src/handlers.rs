@@ -1862,6 +1862,24 @@ pub async fn search_docker_hub(
     }
 }
 
+// === Health Checks ===
+
+pub async fn env_health_checks(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+) -> Json<ApiResponse<Vec<ContainerHealth>>> {
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+
+    if env.is_local {
+        Json(ApiResponse::ok(state.docker.get_container_health().await))
+    } else {
+        agent_get(&env, "/api/health").await
+    }
+}
+
 // === Stack Templates ===
 
 pub async fn list_templates(

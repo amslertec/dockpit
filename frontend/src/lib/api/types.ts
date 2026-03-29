@@ -301,6 +301,26 @@ export interface StackTemplate {
 	is_default: boolean;
 }
 
+export interface HealthLogEntry {
+	start: string;
+	end: string;
+	exit_code: number;
+	output: string;
+}
+
+export interface ContainerHealth {
+	id: string;
+	name: string;
+	image: string;
+	state: string;
+	health_status: string;
+	health_check?: string;
+	health_interval?: string;
+	health_retries?: number;
+	health_log: HealthLogEntry[];
+	failing_streak: number;
+}
+
 export interface VulnerabilityScan {
 	id?: number;
 	env_id: string;

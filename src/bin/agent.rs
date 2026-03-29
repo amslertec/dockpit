@@ -1300,6 +1300,54 @@ async fn agent_scan_vulnerability(
     }))))
 }
 
+async fn agent_health_checks(
+    State(state): State<Arc<AgentState>>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, StatusCode> {
+    state.check_auth(&headers)?;
+
+    let mut filters = std::collections::HashMap::new();
+    filters.insert("status".to_string(), vec!["running".to_string(), "created".to_string()]);
+    let containers = state.docker.list_containers(Some(bollard::container::ListContainersOptions { all: true, filters, ..Default::default() })).await.unwrap_or_default();
+
+    let mut results = Vec::new();
+    for c in &containers {
+        let cid = c.id.as_deref().unwrap_or("");
+        let cname = c.names.as_ref().and_then(|n| n.first()).map(|n| n.trim_start_matches('/')).unwrap_or("");
+        let cimage = c.image.as_deref().unwrap_or("");
+        let cstate = c.state.as_deref().unwrap_or("");
+
+        let inspect = match state.docker.inspect_container(cid, None).await { Ok(i) => i, Err(_) => continue };
+        let istate = inspect.state.as_ref();
+        let health = istate.and_then(|s| s.health.as_ref());
+
+        let health_status = health.and_then(|h| h.status.as_ref()).map(|s| format!("{:?}", s).to_lowercase()).unwrap_or_else(|| "none".into());
+        let hconfig = inspect.config.as_ref().and_then(|cfg| cfg.healthcheck.as_ref());
+        let hcheck = hconfig.and_then(|hc| hc.test.as_ref()).map(|t| t.join(" "));
+        let hinterval = hconfig.and_then(|hc| hc.interval).map(|ns| format!("{}s", ns / 1_000_000_000));
+        let hretries = hconfig.and_then(|hc| hc.retries);
+        let failing = health.and_then(|h| h.failing_streak).unwrap_or(0);
+
+        let hlog: Vec<serde_json::Value> = health.and_then(|h| h.log.as_ref()).map(|logs| {
+            logs.iter().rev().take(5).map(|e| serde_json::json!({
+                "start": e.start.clone().unwrap_or_default(),
+                "end": e.end.clone().unwrap_or_default(),
+                "exit_code": e.exit_code.unwrap_or(-1),
+                "output": e.output.clone().unwrap_or_default().trim(),
+            })).collect()
+        }).unwrap_or_default();
+
+        results.push(serde_json::json!({
+            "id": cid, "name": cname, "image": cimage, "state": cstate,
+            "health_status": health_status, "health_check": hcheck,
+            "health_interval": hinterval, "health_retries": hretries,
+            "health_log": hlog, "failing_streak": failing,
+        }));
+    }
+
+    Ok(Json(ApiResponse::ok(results)))
+}
+
 async fn agent_get_events(
     State(state): State<Arc<AgentState>>,
     headers: HeaderMap,
@@ -1475,6 +1523,7 @@ async fn main() {
         .route("/api/disk-usage", get(disk_usage))
         .route("/api/system", get(system_info))
         .route("/api/vulnerabilities/scan", post(agent_scan_vulnerability))
+        .route("/api/health", get(agent_health_checks))
         .route("/api/events", get(agent_get_events))
         // Stacks
         .route("/api/stacks", get(agent_list_stacks))

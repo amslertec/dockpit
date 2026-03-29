@@ -349,6 +349,30 @@ pub struct StatsSnapshot {
     pub timestamp: i64,
 }
 
+// === Health Check Models ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthLogEntry {
+    pub start: String,
+    pub end: String,
+    pub exit_code: i64,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerHealth {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub health_status: String,
+    pub health_check: Option<String>,
+    pub health_interval: Option<String>,
+    pub health_retries: Option<i64>,
+    pub health_log: Vec<HealthLogEntry>,
+    pub failing_streak: i64,
+}
+
 // === Stack Template Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

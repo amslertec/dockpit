@@ -659,4 +659,21 @@ export const en: Record<string, string> = {
 	'dashboard.addLink': 'Add Link',
 	'dashboard.linkTitle': 'Title',
 	'dashboard.linkUrl': 'URL',
+
+	// === Health Checks ===
+	'health.title': 'Health Checks',
+	'health.totalChecked': 'With Health Check',
+	'health.healthy': 'Healthy',
+	'health.unhealthy': 'Unhealthy',
+	'health.starting': 'Starting',
+	'health.noCheck': 'No Health Check',
+	'health.checkCmd': 'Check Command',
+	'health.interval': 'Interval',
+	'health.retries': 'Retries',
+	'health.failStreak': 'Failing Streak',
+	'health.exitCode': 'Exit Code',
+	'health.output': 'Output',
+	'health.noContainers': 'No containers with health checks',
+	'health.noContainersDesc': 'Containers with Docker HEALTHCHECK will appear here.',
+	'health.log': 'Health Log',
 };
