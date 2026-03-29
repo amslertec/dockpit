@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -7,11 +7,13 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatDateTime } from '$lib/utils/format';
-	import type { VulnerabilityScan } from '$lib/api/types';
+	import type { VulnerabilityScan, VulnScanStatus } from '$lib/api/types';
 
 	let scans = $state<VulnerabilityScan[]>([]);
 	let loading = $state(true);
 	let scanning = $state(false);
+	let scanTotal = $state(0);
+	let scanDone = $state(0);
 	let scanningImage = $state<string | null>(null);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let expandedRows = $state<Set<number>>(new Set());
@@ -29,42 +31,27 @@
 		perPage === 0 ? scans : scans.slice((page - 1) * perPage, page * perPage)
 	);
 
-	onMount(() => {
-		loadScans();
-		// Check if a scan might be running (if we had scanning state before reload)
-		// Start polling briefly to catch any in-progress scan
-		checkIfScanRunning();
-	});
 	onDestroy(() => { if (pollInterval) clearInterval(pollInterval); });
-	$effect(() => { $selectedEnv; loadScans(); });
+	$effect(() => { $selectedEnv; loadScans(); checkStatus(); });
 
-	async function checkIfScanRunning() {
-		// Poll a few times to detect if scan count is changing (= scan in progress)
-		const r1 = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
-		const count1 = r1.data?.length || 0;
-		await new Promise(resolve => setTimeout(resolve, 3000));
-		const r2 = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
-		const count2 = r2.data?.length || 0;
-		if (r2.success && r2.data) scans = r2.data;
-		if (count2 > count1) {
-			// Scan is running
+	async function checkStatus() {
+		if (!$selectedEnv) return;
+		const r = await api.get<VulnScanStatus>(`/env/${$selectedEnv}/vulnerabilities/status`);
+		if (r.success && r.data?.running) {
 			scanning = true;
+			scanTotal = r.data.total;
+			scanDone = r.data.done;
 			startPolling();
 		}
 	}
 
 	function startPolling() {
 		if (pollInterval) clearInterval(pollInterval);
-		lastScanCount = scans.length;
-		pollStableCount = 0;
-		pollInterval = setInterval(pollScans, 5000);
+		pollInterval = setInterval(pollStatus, 3000);
 	}
 	function stopPolling() {
 		if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
 	}
-
-	let lastScanCount = 0;
-	let pollStableCount = 0;
 
 	async function loadScans() {
 		if (!$selectedEnv) return;
@@ -76,23 +63,22 @@
 		loading = false;
 	}
 
-	/** Called during active scan polling — updates data without loading spinner */
-	async function pollScans() {
+	async function pollStatus() {
 		if (!$selectedEnv) return;
-		const r = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
+		const r = await api.get<VulnScanStatus>(`/env/${$selectedEnv}/vulnerabilities/status`);
 		if (r.success && r.data) {
-			scans = r.data;
-			if (scans.length === lastScanCount) {
-				pollStableCount++;
-				if (pollStableCount >= 4) {
-					stopPolling();
-					scanning = false;
-					pollStableCount = 0;
-					toasts.success($t('vuln.scanComplete'));
-				}
-			} else {
-				pollStableCount = 0;
-				lastScanCount = scans.length;
+			const prevDone = scanDone;
+			scanTotal = r.data.total;
+			scanDone = r.data.done;
+			if (!r.data.running) {
+				stopPolling();
+				scanning = false;
+				await loadScans();
+				toasts.success($t('vuln.scanComplete'));
+			} else if (r.data.done > prevDone) {
+				// Only refresh full list when new results arrived
+				const sr = await api.get<VulnerabilityScan[]>(`/env/${$selectedEnv}/vulnerabilities`);
+				if (sr.success && sr.data) scans = sr.data;
 			}
 		}
 	}
@@ -100,6 +86,8 @@
 	async function scanAll() {
 		if (!$selectedEnv || scanning) return;
 		scanning = true;
+		scanTotal = 0;
+		scanDone = 0;
 		const r = await api.post(`/env/${$selectedEnv}/vulnerabilities/scan`, {});
 		if (r.success) {
 			toasts.success($t('vuln.scanStarted'));
@@ -108,11 +96,6 @@
 			toasts.error(r.error || $t('common.error'));
 			scanning = false;
 		}
-	}
-
-	function cancelScan() {
-		scanning = false;
-		stopPolling();
 	}
 
 	async function scanImage(image: string) {
@@ -172,17 +155,14 @@
 				<svg class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 				{$t('common.refresh')}
 			</Button>
-			{#if scanning}
-				<Button size="sm" variant="danger" onclick={cancelScan}>
-					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-					{$t('common.cancel')}
-				</Button>
-			{:else}
-				<Button size="sm" variant="primary" onclick={scanAll}>
+			<Button size="sm" variant="primary" onclick={scanAll} disabled={scanning}>
+				{#if scanning}
+					<div class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+				{:else}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-					{$t('vuln.scanAll')}
-				</Button>
-			{/if}
+				{/if}
+				{$t('vuln.scanAll')}
+			</Button>
 		</div>
 	</div>
 
@@ -190,7 +170,12 @@
 	{#if scanning}
 		<div class="flex items-center gap-3 px-4 py-3 rounded-[var(--radius-lg)] border border-[var(--accent)]/30 bg-[var(--accent-bg)] mb-3">
 			<div class="w-4 h-4 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin shrink-0"></div>
-			<span class="text-xs text-[var(--accent)] font-medium">{$t('vuln.scanRunning')}</span>
+			<span class="text-xs text-[var(--accent)] font-medium">
+				{$t('vuln.scanRunning')}
+				{#if scanTotal > 0}
+					— {scanDone}/{scanTotal} images
+				{/if}
+			</span>
 		</div>
 	{/if}
 

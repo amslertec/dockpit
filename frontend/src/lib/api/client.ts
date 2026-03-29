@@ -41,5 +41,10 @@ export const api = {
 		request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
 	put: <T>(path: string, body: unknown) =>
 		request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
-	del: <T>(path: string) => request<T>(path, { method: 'DELETE' })
+	del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+	/** Get a one-time WebSocket token (valid 30s, single use) */
+	getWsToken: async (): Promise<string> => {
+		const r = await request<string>('/ws-token', { method: 'POST', body: '{}' });
+		return r.success && r.data ? r.data : (get(auth).token || '');
+	}
 };

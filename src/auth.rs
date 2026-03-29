@@ -114,6 +114,39 @@ fn extract_claims_from_request(request: &Request) -> Result<Claims, StatusCode> 
     validate_token(token).map_err(|_| StatusCode::UNAUTHORIZED)
 }
 
+/// CSRF protection: reject state-changing requests from foreign origins.
+/// Since DockPit uses Bearer tokens (not cookies), CSRF is low-risk,
+/// but Origin checking adds defense-in-depth.
+pub async fn csrf_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
+    let method = request.method().clone();
+    // Only check state-changing methods
+    if method == axum::http::Method::GET || method == axum::http::Method::HEAD || method == axum::http::Method::OPTIONS {
+        return Ok(next.run(request).await);
+    }
+
+    // Allow requests without Origin header (non-browser clients like curl, Prometheus)
+    if let Some(origin) = request.headers().get("Origin").and_then(|v| v.to_str().ok()) {
+        if let Some(host) = request.headers().get("Host").and_then(|v| v.to_str().ok()) {
+            // Extract host:port from origin URL (e.g., "https://example.com:5533" → "example.com:5533")
+            let origin_host = origin
+                .strip_prefix("https://").or_else(|| origin.strip_prefix("http://"))
+                .unwrap_or(origin);
+            // Compare: origin host must match the Host header
+            if origin_host != host && !origin_host.starts_with(&format!("{}/", host)) {
+                // Also check without port
+                let host_no_port = host.split(':').next().unwrap_or(host);
+                let origin_no_port = origin_host.split(':').next().unwrap_or(origin_host);
+                if origin_no_port != host_no_port {
+                    tracing::warn!("CSRF: Origin '{}' does not match Host '{}'", origin, host);
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
+        }
+    }
+
+    Ok(next.run(request).await)
+}
+
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     bcrypt::hash(password, 10)
 }

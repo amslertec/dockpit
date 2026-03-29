@@ -333,3 +333,9 @@ export interface VulnerabilityScan {
 	cves_json?: string;
 	scanned_at?: string;
 }
+
+export interface VulnScanStatus {
+	running: boolean;
+	total: number;
+	done: number;
+}

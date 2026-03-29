@@ -327,6 +327,13 @@ pub struct UpdateCheckStatus {
     pub last_check: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VulnScanStatus {
+    pub running: bool,
+    pub total: usize,
+    pub done: usize,
+}
+
 // === Live Stats Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import { api } from '$lib/api/client';
 import type { StatsSnapshot, ContainerStats } from '$lib/api/types';
 
 function createStatsStore() {
@@ -7,10 +8,19 @@ function createStatsStore() {
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentEnvId = '';
 
-	function connect(envId: string) {
+	async function connect(envId: string) {
 		disconnect();
 		currentEnvId = envId;
-		const token = typeof window !== 'undefined' ? localStorage.getItem('dp_token') || '' : '';
+		let token: string;
+		try {
+			token = await api.getWsToken();
+		} catch {
+			// Token fetch failed — retry via onclose path
+			if (currentEnvId) reconnectTimer = setTimeout(() => connect(currentEnvId), 3000);
+			return;
+		}
+		// Guard against stale connect after env switch during await
+		if (currentEnvId !== envId) return;
 		const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const url = `${proto}//${location.host}/api/env/${envId}/stats/live?token=${encodeURIComponent(token)}`;
 

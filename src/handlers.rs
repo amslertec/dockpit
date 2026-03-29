@@ -20,7 +20,11 @@ pub struct AppState {
     pub docker: DockerClient,
     pub stacks: StackManager,
     pub update_check_running: std::sync::atomic::AtomicBool,
+    pub vuln_scan_running: std::sync::atomic::AtomicBool,
+    pub vuln_scan_total: std::sync::atomic::AtomicUsize,
+    pub vuln_scan_done: std::sync::atomic::AtomicUsize,
     pub login_attempts: std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>,
+    pub ws_tokens: std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
 }
 
 // === Agent Proxy Helpers ===
@@ -1224,14 +1228,42 @@ pub struct TerminalQuery {
     pub user: Option<String>,
 }
 
+/// Generate a one-time WebSocket token (valid 30 seconds, single use).
+/// This endpoint is behind auth_middleware, so JWT is already validated.
+pub async fn create_ws_token(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<String>> {
+    let token = auth::generate_agent_token();
+    {
+        let mut tokens = state.ws_tokens.lock().unwrap();
+        let now = std::time::Instant::now();
+        tokens.retain(|_, created| now.duration_since(*created).as_secs() < 60);
+        tokens.insert(token.clone(), now);
+    }
+    Json(ApiResponse::ok(token))
+}
+
+/// Validate and consume a one-time WS token. Falls back to JWT validation for backwards compat.
+fn validate_ws_token(state: &AppState, token: &str) -> bool {
+    // Try one-time token first
+    {
+        let mut tokens = state.ws_tokens.lock().unwrap();
+        if let Some(created) = tokens.remove(token) {
+            let age = std::time::Instant::now().duration_since(created).as_secs();
+            return age < 30;
+        }
+    }
+    // Fall back to JWT (backwards compatibility)
+    auth::validate_token(token).is_ok()
+}
+
 pub async fn env_container_terminal(
     State(state): State<Arc<AppState>>,
     Path((env_id, container_id)): Path<(String, String)>,
     Query(query): Query<TerminalQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Auth via query param (WebSocket can't set headers)
-    if auth::validate_token(&query.token).is_err() {
+    if !validate_ws_token(&state, &query.token) {
         return axum::http::StatusCode::UNAUTHORIZED.into_response();
     }
     let env = match state.db.get_environment(&env_id) {
@@ -1410,7 +1442,7 @@ pub async fn env_stats_live(
     Query(query): Query<TerminalQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if auth::validate_token(&query.token).is_err() {
+    if !validate_ws_token(&state, &query.token) {
         return axum::http::StatusCode::UNAUTHORIZED.into_response();
     }
     let env = match state.db.get_environment(&env_id) {
@@ -2092,17 +2124,38 @@ pub async fn env_get_scan_history(
     Json(ApiResponse::ok(state.db.get_scan_history(&env_id, &decoded)))
 }
 
+pub async fn env_vuln_scan_status(
+    State(state): State<Arc<AppState>>,
+    Path(_env_id): Path<String>,
+) -> Json<ApiResponse<VulnScanStatus>> {
+    use std::sync::atomic::Ordering;
+    Json(ApiResponse::ok(VulnScanStatus {
+        running: state.vuln_scan_running.load(Ordering::SeqCst),
+        total: state.vuln_scan_total.load(Ordering::SeqCst),
+        done: state.vuln_scan_done.load(Ordering::SeqCst),
+    }))
+}
+
 pub async fn env_scan_vulnerabilities(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
     Path(env_id): Path<String>,
 ) -> Json<ApiResponse<String>> {
+    use std::sync::atomic::Ordering;
+
+    if state.vuln_scan_running.load(Ordering::SeqCst) {
+        return Json(ApiResponse { success: false, data: None, error: Some("Scan already running".to_string()) });
+    }
+
     let env = match get_env(&state, &env_id) {
         Ok(e) => e,
         Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
     };
 
     state.db.log_audit(&audit_user(&headers), "vuln_scan", Some(&env_name(&state, &env_id)), None);
+    state.vuln_scan_running.store(true, Ordering::SeqCst);
+    state.vuln_scan_total.store(0, Ordering::SeqCst);
+    state.vuln_scan_done.store(0, Ordering::SeqCst);
 
     let state_clone = state.clone();
     let env_id_clone = env_id.clone();
@@ -2133,18 +2186,20 @@ pub async fn env_scan_vulnerabilities(
         }
 
         // Unique images only
-        let mut scanned = std::collections::HashSet::new();
-        for c in &containers {
-            if scanned.contains(&c.image) { continue; }
-            scanned.insert(c.image.clone());
+        let unique_images: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            containers.iter().filter(|c| seen.insert(c.image.clone())).map(|c| c.image.clone()).collect()
+        };
+        state_clone.vuln_scan_total.store(unique_images.len(), Ordering::SeqCst);
+        state_clone.vuln_scan_done.store(0, Ordering::SeqCst);
 
+        for image in &unique_images {
             let result = if env.is_local {
-                scout_scan_image(&c.image).await
+                scout_scan_image(image).await
             } else {
-                // Proxy to agent — parse as serde_json::Value first then extract fields
                 let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().unwrap();
                 let url = format!("{}/api/vulnerabilities/scan", env.url);
-                let body = serde_json::json!({ "image": c.image });
+                let body = serde_json::json!({ "image": image });
                 match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
                     .json(&body).send().await
                 {
@@ -2155,7 +2210,7 @@ pub async fn env_scan_vulnerabilities(
                                     Ok(VulnerabilityScan {
                                         id: None,
                                         env_id: String::new(),
-                                        image: data["image"].as_str().unwrap_or(&c.image).to_string(),
+                                        image: data["image"].as_str().unwrap_or(image).to_string(),
                                         critical: data["critical"].as_i64().unwrap_or(0) as i32,
                                         high: data["high"].as_i64().unwrap_or(0) as i32,
                                         medium: data["medium"].as_i64().unwrap_or(0) as i32,
@@ -2181,15 +2236,17 @@ pub async fn env_scan_vulnerabilities(
                     state_clone.db.save_scan_result(&scan).ok();
                 }
                 Err(e) => {
-                    tracing::warn!("Vuln scan FAILED for {}: {}", c.image, e);
+                    tracing::warn!("Vuln scan FAILED for {}: {}", image, e);
                 }
             }
+            state_clone.vuln_scan_done.fetch_add(1, Ordering::SeqCst);
         }
 
+        state_clone.vuln_scan_running.store(false, Ordering::SeqCst);
         state_clone.db.create_notification(
             "scan_complete",
             "Vulnerability scan complete",
-            &format!("{} images scanned", scanned.len()),
+            &format!("{} images scanned", unique_images.len()),
         ).ok();
     });
 

@@ -129,7 +129,11 @@ async fn main() {
     let state = Arc::new(AppState {
         db, docker, stacks: stacks_mgr,
         update_check_running: std::sync::atomic::AtomicBool::new(false),
+        vuln_scan_running: std::sync::atomic::AtomicBool::new(false),
+        vuln_scan_total: std::sync::atomic::AtomicUsize::new(0),
+        vuln_scan_done: std::sync::atomic::AtomicUsize::new(0),
         login_attempts: std::sync::Mutex::new(std::collections::HashMap::new()),
+        ws_tokens: std::sync::Mutex::new(std::collections::HashMap::new()),
     });
 
     // Start scheduler loop (checks for due jobs every 60 seconds)
@@ -192,6 +196,7 @@ async fn main() {
         .route("/api/env/{env_id}/stacks/{name}", get(handlers::env_get_stack))
         .route("/api/updates/report", get(handlers::get_update_report))
         .route("/api/updates/status", get(handlers::get_update_check_status))
+        .route("/api/ws-token", post(handlers::create_ws_token))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
@@ -235,6 +240,7 @@ async fn main() {
         .route("/api/templates/{id}", delete(handlers::delete_template))
         .route("/api/env/{env_id}/vulnerabilities", get(handlers::env_get_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/scan", post(handlers::env_scan_vulnerabilities))
+        .route("/api/env/{env_id}/vulnerabilities/status", get(handlers::env_vuln_scan_status))
         .route("/api/env/{env_id}/vulnerabilities/history/{image}", get(handlers::env_get_scan_history))
         .route("/api/env/{env_id}/vulnerabilities/scan/{image}", post(handlers::env_scan_single_image))
         .route("/api/scheduled-jobs", get(handlers::list_scheduled_jobs))
@@ -266,6 +272,7 @@ async fn main() {
         .merge(super_admin_routes)
         .merge(ws_routes)
         .fallback(serve_frontend)
+        .layer(middleware::from_fn(auth::csrf_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

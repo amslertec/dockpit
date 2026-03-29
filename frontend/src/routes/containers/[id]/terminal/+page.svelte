@@ -105,7 +105,7 @@
 			const { FitAddon } = await import('@xterm/addon-fit');
 			await import('@xterm/xterm/css/xterm.css');
 
-			const token = localStorage.getItem('dp_token') || '';
+			const token = await api.getWsToken();
 			const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 			const url = `${proto}//${location.host}/api/env/${$selectedEnv}/containers/${containerId}/terminal?token=${encodeURIComponent(token)}&shell=${encodeURIComponent(selectedShell)}${user ? `&user=${encodeURIComponent(user)}` : ''}`;
 

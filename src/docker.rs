@@ -9,6 +9,28 @@ use std::collections::HashMap;
 
 use crate::models::*;
 
+const DOCKER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const DOCKER_PULL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+async fn with_timeout<T>(
+    fut: impl std::future::Future<Output = Result<T, bollard::errors::Error>>,
+) -> Result<T, bollard::errors::Error> {
+    with_timeout_dur(DOCKER_TIMEOUT, fut).await
+}
+
+async fn with_timeout_dur<T>(
+    duration: std::time::Duration,
+    fut: impl std::future::Future<Output = Result<T, bollard::errors::Error>>,
+) -> Result<T, bollard::errors::Error> {
+    match tokio::time::timeout(duration, fut).await {
+        Ok(result) => result,
+        Err(_) => Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 504,
+            message: format!("Docker operation timed out after {}s", duration.as_secs()),
+        }),
+    }
+}
+
 pub struct DockerClient {
     docker: Docker,
 }
@@ -37,7 +59,7 @@ impl DockerClient {
             ..Default::default()
         };
 
-        let containers = self.docker.list_containers(Some(options)).await?;
+        let containers = with_timeout(self.docker.list_containers(Some(options))).await?;
 
         Ok(containers
             .into_iter()
@@ -89,37 +111,36 @@ impl DockerClient {
     }
 
     pub async fn start_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
-        self.docker.start_container(id, None::<StartContainerOptions<String>>).await
+        with_timeout(self.docker.start_container(id, None::<StartContainerOptions<String>>)).await
     }
 
     pub async fn stop_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
-        self.docker
-            .stop_container(id, Some(StopContainerOptions { t: 10 }))
-            .await
+        with_timeout(
+            self.docker.stop_container(id, Some(StopContainerOptions { t: 10 }))
+        ).await
     }
 
     pub async fn restart_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
-        self.docker.restart_container(id, Some(bollard::container::RestartContainerOptions { t: 10 })).await
+        with_timeout(
+            self.docker.restart_container(id, Some(bollard::container::RestartContainerOptions { t: 10 }))
+        ).await
     }
 
     pub async fn remove_container(&self, id: &str) -> Result<(), bollard::errors::Error> {
-        self.docker
-            .remove_container(
-                id,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
+        with_timeout(
+            self.docker.remove_container(id, Some(RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            }))
+        ).await
     }
 
     pub async fn inspect_container(&self, id: &str) -> Result<bollard::models::ContainerInspectResponse, bollard::errors::Error> {
-        self.docker.inspect_container(id, None).await
+        with_timeout(self.docker.inspect_container(id, None)).await
     }
 
     pub async fn inspect_image(&self, name: &str) -> Result<bollard::models::ImageInspect, bollard::errors::Error> {
-        self.docker.inspect_image(name).await
+        with_timeout(self.docker.inspect_image(name)).await
     }
 
     /// Check if image has update available by comparing platform manifest digests.
@@ -307,12 +328,12 @@ impl DockerClient {
             ..Default::default()
         };
 
-        let images = self.docker.list_images(Some(options)).await?;
+        let images = with_timeout(self.docker.list_images(Some(options))).await?;
 
         // Get all image IDs used by containers
-        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+        let containers = with_timeout(self.docker.list_containers(Some(ListContainersOptions::<&str> {
             all: true, ..Default::default()
-        })).await.unwrap_or_default();
+        }))).await.unwrap_or_default();
 
         let used_ids: std::collections::HashSet<String> = containers.iter()
             .filter_map(|c| c.image_id.clone())
@@ -351,16 +372,17 @@ impl DockerClient {
             ..Default::default()
         };
 
-        let mut stream = self.docker.create_image(Some(options), None, None);
-        while let Some(result) = stream.next().await {
-            result?;
-        }
-
-        Ok(())
+        with_timeout_dur(DOCKER_PULL_TIMEOUT, async {
+            let mut stream = self.docker.create_image(Some(options), None, None);
+            while let Some(result) = stream.next().await {
+                result?;
+            }
+            Ok(())
+        }).await
     }
 
     pub async fn prune_images(&self) -> Result<String, bollard::errors::Error> {
-        let result = self.docker.prune_images::<String>(None).await?;
+        let result = with_timeout(self.docker.prune_images::<String>(None)).await?;
         let deleted = result.images_deleted.map(|v| v.len()).unwrap_or(0);
         let space = result.space_reclaimed.unwrap_or(0);
         Ok(format!("{} Images gelöscht, {:.1} MB freigegeben", deleted, space as f64 / 1_000_000.0))
@@ -371,8 +393,8 @@ impl DockerClient {
     }
 
     pub async fn remove_image_force(&self, id: &str, force: bool) -> Result<(), bollard::errors::Error> {
-        self.docker
-            .remove_image(
+        with_timeout(
+            self.docker.remove_image(
                 id,
                 Some(RemoveImageOptions {
                     force,
@@ -380,19 +402,19 @@ impl DockerClient {
                 }),
                 None,
             )
-            .await?;
+        ).await?;
         Ok(())
     }
 
     pub async fn list_volumes(&self) -> Result<Vec<VolumeInfo>, bollard::errors::Error> {
-        let result = self.docker.list_volumes(Some(ListVolumesOptions::<String> {
+        let result = with_timeout(self.docker.list_volumes(Some(ListVolumesOptions::<String> {
             ..Default::default()
-        })).await?;
+        }))).await?;
 
         // Get volumes in use by containers
-        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+        let containers = with_timeout(self.docker.list_containers(Some(ListContainersOptions::<&str> {
             all: true, ..Default::default()
-        })).await.unwrap_or_default();
+        }))).await.unwrap_or_default();
 
         let used_volumes: std::collections::HashSet<String> = containers.iter()
             .filter_map(|c| c.mounts.as_ref())
@@ -423,21 +445,21 @@ impl DockerClient {
     }
 
     pub async fn prune_volumes(&self) -> Result<String, bollard::errors::Error> {
-        let result = self.docker.prune_volumes::<String>(None).await?;
+        let result = with_timeout(self.docker.prune_volumes::<String>(None)).await?;
         let deleted = result.volumes_deleted.map(|v| v.len()).unwrap_or(0);
         let space = result.space_reclaimed.unwrap_or(0);
         Ok(format!("{} Volumes gelöscht, {:.1} MB freigegeben", deleted, space as f64 / 1_000_000.0))
     }
 
     pub async fn list_networks(&self) -> Result<Vec<NetworkInfo>, bollard::errors::Error> {
-        let networks = self.docker.list_networks(Some(ListNetworksOptions::<String> {
+        let networks = with_timeout(self.docker.list_networks(Some(ListNetworksOptions::<String> {
             ..Default::default()
-        })).await?;
+        }))).await?;
 
         // Get used network IDs from containers
-        let containers = self.docker.list_containers(Some(ListContainersOptions::<&str> {
+        let containers = with_timeout(self.docker.list_containers(Some(ListContainersOptions::<&str> {
             all: true, ..Default::default()
-        })).await.unwrap_or_default();
+        }))).await.unwrap_or_default();
 
         let mut network_usage: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for c in &containers {
@@ -470,7 +492,7 @@ impl DockerClient {
     }
 
     pub async fn prune_networks(&self) -> Result<String, bollard::errors::Error> {
-        let result = self.docker.prune_networks::<String>(None).await?;
+        let result = with_timeout(self.docker.prune_networks::<String>(None)).await?;
         let deleted = result.networks_deleted.map(|v| v.len()).unwrap_or(0);
         Ok(format!("{} Netzwerke gelöscht", deleted))
     }

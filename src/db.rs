@@ -20,6 +20,7 @@ impl Database {
         conn.execute_batch("
             PRAGMA journal_mode=WAL;
             PRAGMA foreign_keys=ON;
+            PRAGMA busy_timeout=5000;
         ")?;
 
         let db = Self {
@@ -169,6 +170,19 @@ impl Database {
                 last_message TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+        ")?;
+
+        // Indexes for frequently queried tables
+        conn.execute_batch("
+            CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+            CREATE INDEX IF NOT EXISTS idx_container_events_env_id ON container_events(env_id);
+            CREATE INDEX IF NOT EXISTS idx_container_events_timestamp ON container_events(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_vulnerability_scans_env_id ON vulnerability_scans(env_id);
+            CREATE INDEX IF NOT EXISTS idx_vulnerability_scans_image ON vulnerability_scans(image);
+            CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
+            CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+            CREATE INDEX IF NOT EXISTS idx_update_checks_env_id ON update_checks(env_id);
         ")?;
 
         Ok(())
