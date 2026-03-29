@@ -2119,6 +2119,19 @@ pub async fn env_scan_vulnerabilities(
             }
         };
 
+        // Propagate Docker login to agent before scanning (scout needs it)
+        if !env.is_local {
+            let creds_list = state_clone.db.get_all_registry_credentials();
+            let login_client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap();
+            for (registry, username, password) in &creds_list {
+                let url = format!("{}/api/docker/login", env.url);
+                let body = serde_json::json!({ "registry": registry, "username": username, "password": password });
+                let _ = login_client.post(&url)
+                    .header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+                    .json(&body).send().await;
+            }
+        }
+
         // Unique images only
         let mut scanned = std::collections::HashSet::new();
         for c in &containers {
@@ -2161,9 +2174,15 @@ pub async fn env_scan_vulnerabilities(
                 }
             };
 
-            if let Ok(mut scan) = result {
-                scan.env_id = env_id_clone.clone();
-                state_clone.db.save_scan_result(&scan).ok();
+            match result {
+                Ok(mut scan) => {
+                    scan.env_id = env_id_clone.clone();
+                    tracing::info!("Vuln scan OK: {} — C:{} H:{} M:{} L:{}", scan.image, scan.critical, scan.high, scan.medium, scan.low);
+                    state_clone.db.save_scan_result(&scan).ok();
+                }
+                Err(e) => {
+                    tracing::warn!("Vuln scan FAILED for {}: {}", c.image, e);
+                }
             }
         }
 
