@@ -143,56 +143,32 @@ impl DockerClient {
         with_timeout(self.docker.inspect_image(name)).await
     }
 
-    /// Check if image has update available by comparing platform manifest digests.
-    /// Uses `docker manifest inspect` locally + registry API remotely.
+    /// Check if image has update available by comparing config digests (= image IDs).
+    /// Local: `docker inspect` → `.Id` (config digest)
+    /// Remote: registry API → platform manifest → `config.digest`
     /// Returns (outdated: bool, local_digest, remote_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
         let local = self.docker.inspect_image(image).await
             .map_err(|e| format!("Image not found: {}", e))?;
-        let local_digests = local.repo_digests.unwrap_or_default();
         let local_id = local.id.clone().unwrap_or_default();
 
-        if local_digests.is_empty() {
-            return Ok((false, local_id.clone(), local_id));
-        }
-
-        // Get local amd64 manifest digest via `docker manifest inspect`
-        let local_manifest_output = tokio::process::Command::new("docker")
-            .args(["manifest", "inspect", image])
-            .output().await
-            .map_err(|e| e.to_string())?;
-
-        let local_amd64_digest = if local_manifest_output.status.success() {
-            let stdout = String::from_utf8_lossy(&local_manifest_output.stdout);
-            let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
-            manifest.get("manifests").and_then(|m| m.as_array()).and_then(|arr| {
-                arr.iter().find(|m| {
-                    let p = &m["platform"];
-                    p["architecture"].as_str() == Some("amd64") && p["os"].as_str() == Some("linux")
-                        && !m.get("mediaType").and_then(|mt| mt.as_str()).unwrap_or("").contains("attestation")
-                }).and_then(|m| m["digest"].as_str().map(|s| s.to_string()))
-            }).unwrap_or_default()
-        } else {
-            String::new()
-        };
-
-        if local_amd64_digest.is_empty() {
-            return Ok((false, local_id.clone(), local_id));
+        if local_id.is_empty() {
+            return Ok((false, String::new(), String::new()));
         }
 
         let (registry, repo, tag) = parse_image_ref(image);
 
-        // Get remote amd64 manifest digest from registry
-        let remote_amd64_digest = match fetch_platform_digest(&registry, &repo, &tag).await {
+        // Get remote config digest (= image ID) from registry
+        let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag).await {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!("Registry check failed for {}: {}", image, e);
-                return Ok((false, local_amd64_digest.clone(), local_amd64_digest));
+                return Ok((false, local_id.clone(), local_id));
             }
         };
 
-        let outdated = !remote_amd64_digest.is_empty() && local_amd64_digest != remote_amd64_digest;
-        Ok((outdated, local_amd64_digest, remote_amd64_digest))
+        let outdated = !remote_config_digest.is_empty() && local_id != remote_config_digest;
+        Ok((outdated, local_id, remote_config_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
