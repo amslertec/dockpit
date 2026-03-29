@@ -503,6 +503,15 @@ impl Database {
         Ok(())
     }
 
+    /// Mark a container as up-to-date after recreate (remove outdated entry)
+    pub fn mark_container_updated(&self, container_name: &str) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM update_checks WHERE container_name = ?1 OR container_name = ?2",
+            params![container_name, container_name.trim_start_matches('/')],
+        ).ok();
+    }
+
     // === Scheduled Jobs ===
 
     pub fn get_scheduled_jobs(&self, env_id: Option<&str>) -> Vec<ScheduledJob> {

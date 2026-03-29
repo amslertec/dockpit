@@ -121,6 +121,8 @@
 			recreateModal.output = r.data || '';
 			recreateModal.done = true;
 			recreateModal = { ...recreateModal };
+			// Clear outdated status for this container
+			const m = new Map(updateStatus); m.set(id, 'up-to-date'); updateStatus = m;
 			setTimeout(load, 1500);
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');

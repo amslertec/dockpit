@@ -1218,6 +1218,7 @@ pub async fn env_recreate_container(
                             if !line.trim().is_empty() { output_lines.push(format!("  {}", line)); }
                         }
                         if up_out.status.success() {
+                            state.db.mark_container_updated(&cname);
                             return Json(ApiResponse::ok(output_lines.join("\n")));
                         } else {
                             return Json(ApiResponse::err(output_lines.join("\n")));
@@ -1230,14 +1231,33 @@ pub async fn env_recreate_container(
 
         // Standalone container: use Docker API to recreate
         match state.docker.recreate_container(&container_id).await {
-            Ok(msg) => Json(ApiResponse::ok(msg)),
+            Ok(msg) => {
+                state.db.mark_container_updated(&cname);
+                Json(ApiResponse::ok(msg))
+            }
             Err(e) => Json(ApiResponse::err(e)),
         }
     } else {
         let client = reqwest::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
         let url = format!("{}/api/containers/{}/recreate", env.url, container_id);
         match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&()).send().await {
-            Ok(resp) => match resp.json::<ApiResponse<String>>().await { Ok(d) => Json(d), Err(e) => Json(ApiResponse::err(e.to_string())) },
+            Ok(resp) => match resp.json::<ApiResponse<String>>().await {
+                Ok(d) => {
+                    if d.success {
+                        // Try to resolve container name for update check cleanup
+                        let name_url = format!("{}/api/containers", env.url);
+                        if let Ok(r) = client.get(&name_url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+                            if let Ok(containers) = r.json::<ApiResponse<Vec<ContainerInfo>>>().await {
+                                if let Some(c) = containers.data.as_ref().and_then(|cs| cs.iter().find(|c| c.id.starts_with(&container_id) || c.id == container_id)) {
+                                    state.db.mark_container_updated(&c.name);
+                                }
+                            }
+                        }
+                    }
+                    Json(d)
+                }
+                Err(e) => Json(ApiResponse::err(e.to_string())),
+            },
             Err(e) => Json(ApiResponse::err(format!("Agent: {}", e))),
         }
     }
