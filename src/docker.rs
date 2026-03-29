@@ -143,32 +143,39 @@ impl DockerClient {
         with_timeout(self.docker.inspect_image(name)).await
     }
 
-    /// Check if image has update available by comparing config digests (= image IDs).
-    /// Local: `docker inspect` → `.Id` (config digest)
-    /// Remote: registry API → platform manifest → `config.digest`
+    /// Check if image has update available by comparing RepoDigest (local) with tag digest (remote).
+    /// Local: `docker inspect` → `.RepoDigests` (manifest digest recorded at pull time)
+    /// Remote: HEAD request to registry → `Docker-Content-Digest` header (current tag digest)
     /// Returns (outdated: bool, local_digest, remote_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
         let local = self.docker.inspect_image(image).await
             .map_err(|e| format!("Image not found: {}", e))?;
-        let local_id = local.id.clone().unwrap_or_default();
 
-        if local_id.is_empty() {
+        // Extract the repo digest (sha256:...) from RepoDigests
+        let local_digest = local.repo_digests.as_ref()
+            .and_then(|digests| digests.first())
+            .and_then(|d| d.split('@').nth(1))
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        if local_digest.is_empty() {
+            // Locally-built images have no repo digest — can't check for updates
             return Ok((false, String::new(), String::new()));
         }
 
         let (registry, repo, tag) = parse_image_ref(image);
 
-        // Get remote config digest (= image ID) from registry
-        let remote_config_digest = match fetch_remote_config_digest(&registry, &repo, &tag).await {
+        // Get current tag digest from registry via HEAD request
+        let remote_digest = match fetch_tag_digest(&registry, &repo, &tag).await {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!("Registry check failed for {}: {}", image, e);
-                return Ok((false, local_id.clone(), local_id));
+                return Ok((false, local_digest.clone(), local_digest));
             }
         };
 
-        let outdated = !remote_config_digest.is_empty() && local_id != remote_config_digest;
-        Ok((outdated, local_id, remote_config_digest))
+        let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
+        Ok((outdated, local_digest, remote_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
@@ -877,7 +884,9 @@ async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str) -> Re
 /// Fetch the digest of an image tag from a container registry WITHOUT pulling.
 /// Uses Docker Distribution HTTP API v2. Supports authenticated registries
 /// by reading credentials from Docker config (~/.docker/config.json).
-async fn fetch_registry_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
+/// Fetch the current digest of a tag from the registry via HEAD request.
+/// Returns the Docker-Content-Digest header value (manifest list/index digest).
+async fn fetch_tag_digest(registry: &str, repo: &str, tag: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
