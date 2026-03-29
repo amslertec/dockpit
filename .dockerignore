@@ -43,3 +43,4 @@ Thumbs.db
 
 # Data volumes (if mounted locally)
 dockpit_data/
+FEATURES.md
