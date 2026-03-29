@@ -74,7 +74,7 @@
 			case 'healthy': return $t('health.healthy');
 			case 'unhealthy': return $t('health.unhealthy');
 			case 'starting': return $t('health.starting');
-			default: return $t('health.noCheck');
+			default: return '—';
 		}
 	}
 
