@@ -342,54 +342,36 @@ async fn check_container_update(
 
     let local_image = state.docker.inspect_image(&image_name).await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    let local_id = local_image.id.unwrap_or_default();
-    let local_digests = local_image.repo_digests.unwrap_or_default();
 
-    if local_digests.is_empty() {
+    // Extract RepoDigest (manifest digest recorded at pull time)
+    let local_digest = local_image.repo_digests.as_ref()
+        .and_then(|digests| digests.first())
+        .and_then(|d| d.split('@').nth(1))
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    if local_digest.is_empty() {
         return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-            outdated: false, current_id: local_id.clone(), latest_id: local_id, image: image_name,
-        })));
-    }
-
-    // Get local amd64 manifest digest via `docker manifest inspect`
-    let local_manifest_output = tokio::process::Command::new("docker")
-        .args(["manifest", "inspect", &image_name])
-        .output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let local_amd64_digest = if local_manifest_output.status.success() {
-        let stdout = String::from_utf8_lossy(&local_manifest_output.stdout);
-        let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
-        manifest.get("manifests").and_then(|m| m.as_array()).and_then(|arr| {
-            arr.iter().find(|m| {
-                let p = &m["platform"];
-                p["architecture"].as_str() == Some("amd64") && p["os"].as_str() == Some("linux")
-                    && !m.get("mediaType").and_then(|mt| mt.as_str()).unwrap_or("").contains("attestation")
-            }).and_then(|m| m["digest"].as_str().map(|s| s.to_string()))
-        }).unwrap_or_default()
-    } else { String::new() };
-
-    if local_amd64_digest.is_empty() {
-        return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-            outdated: false, current_id: local_id.clone(), latest_id: local_id, image: image_name,
+            outdated: false, current_id: String::new(), latest_id: String::new(), image: image_name,
         })));
     }
 
     let (registry, repo, tag) = parse_image_ref(&image_name);
     let creds = body.and_then(|Json(b)| b.credentials).unwrap_or_else(Vec::new);
 
-    // Get remote amd64 manifest digest
-    let remote_amd64_digest = match fetch_platform_digest(&registry, &repo, &tag, &creds).await {
+    // Get current remote tag digest via HEAD request
+    let remote_digest = match fetch_tag_digest(&registry, &repo, &tag, &creds).await {
         Ok(d) => d,
         Err(_) => {
             return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-                outdated: false, current_id: local_amd64_digest.clone(), latest_id: local_amd64_digest, image: image_name,
+                outdated: false, current_id: local_digest.clone(), latest_id: local_digest, image: image_name,
             })));
         }
     };
 
-    let outdated = !remote_amd64_digest.is_empty() && local_amd64_digest != remote_amd64_digest;
+    let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
     Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-        outdated, current_id: local_amd64_digest, latest_id: remote_amd64_digest, image: image_name,
+        outdated, current_id: local_digest, latest_id: remote_digest, image: image_name,
     })))
 }
 
@@ -451,37 +433,27 @@ async fn get_registry_token_with_creds(client: &reqwest::Client, registry: &str,
 }
 
 /// Fetch amd64/linux platform manifest digest from registry (not affected by attestation changes)
-async fn fetch_platform_digest(registry: &str, repo: &str, tag: &str, creds: &[RegistryCredential]) -> Result<String, String> {
+/// Fetch the current tag digest from registry via HEAD request (Docker-Content-Digest header).
+async fn fetch_tag_digest(registry: &str, repo: &str, tag: &str, creds: &[RegistryCredential]) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build().map_err(|e| e.to_string())?;
     let token = get_registry_token_with_creds(&client, registry, repo, creds).await.unwrap_or_default();
-    let auth_header = if !token.is_empty() { format!("Bearer {}", token) } else { String::new() };
 
     let url = format!("https://{}/v2/{}/manifests/{}", registry, repo, tag);
-    let mut req = client.get(&url)
+    let mut req = client.head(&url)
         .header("Accept", "application/vnd.oci.image.index.v1+json")
         .header("Accept", "application/vnd.docker.distribution.manifest.list.v2+json")
         .header("Accept", "application/vnd.docker.distribution.manifest.v2+json");
-    if !auth_header.is_empty() { req = req.header("Authorization", &auth_header); }
+    if !token.is_empty() { req = req.header("Authorization", format!("Bearer {}", token)); }
     let resp = req.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() { return Err(format!("Registry returned {}", resp.status())); }
 
-    let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let head_digest = resp.headers().get("docker-content-digest").and_then(|v| v.to_str().ok()).map(|s| s.to_string()).unwrap_or_default();
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    if content_type.contains("manifest.list") || content_type.contains("image.index") {
-        let manifests = body["manifests"].as_array().ok_or("No manifests")?;
-        let amd64 = manifests.iter().find(|m| {
-            let p = &m["platform"];
-            p["architecture"].as_str() == Some("amd64") && p["os"].as_str() == Some("linux")
-                && !m["mediaType"].as_str().unwrap_or("").contains("attestation")
-        }).ok_or("No linux/amd64 manifest")?;
-        amd64["digest"].as_str().map(|s| s.to_string()).ok_or_else(|| "No digest".into())
-    } else {
-        if head_digest.is_empty() { Err("No digest".into()) } else { Ok(head_digest) }
-    }
+    resp.headers()
+        .get("docker-content-digest")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No digest in response".into())
 }
 
 async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str, creds: &[RegistryCredential]) -> Result<String, String> {
