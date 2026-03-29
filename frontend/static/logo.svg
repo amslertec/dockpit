@@ -1,16 +1,63 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#4f8cff"/>
-      <stop offset="100%" stop-color="#3564c4"/>
+      <stop offset="0%" stop-color="#1a6bff"/>
+      <stop offset="50%" stop-color="#0d4fd6"/>
+      <stop offset="100%" stop-color="#0a3ba8"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#6db3ff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#1a6bff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wheel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c8dfff"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
-  <rect x="96" y="120" width="320" height="60" rx="10" fill="rgba(255,255,255,0.95)"/>
-  <rect x="96" y="204" width="320" height="60" rx="10" fill="rgba(255,255,255,0.72)"/>
-  <rect x="96" y="288" width="320" height="60" rx="10" fill="rgba(255,255,255,0.50)"/>
-  <rect x="96" y="372" width="152" height="24" rx="6" fill="rgba(255,255,255,0.30)"/>
-  <circle cx="142" cy="150" r="12" fill="#4f8cff"/>
-  <circle cx="142" cy="234" r="12" fill="#5a9aff"/>
-  <circle cx="142" cy="318" r="12" fill="#7ab4ff"/>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Subtle glow at top -->
+  <rect width="512" height="256" rx="112" fill="url(#glow)"/>
+
+  <!-- Ship wheel (Pit = Cockpit/Control) -->
+  <g transform="translate(256,248)">
+    <!-- Outer ring -->
+    <circle cx="0" cy="0" r="130" fill="none" stroke="url(#wheel)" stroke-width="18" opacity="0.9"/>
+
+    <!-- Inner hub -->
+    <circle cx="0" cy="0" r="36" fill="none" stroke="url(#wheel)" stroke-width="14" opacity="0.95"/>
+
+    <!-- Spokes (8 directions) -->
+    <g stroke="url(#wheel)" stroke-width="14" stroke-linecap="round" opacity="0.9">
+      <line x1="0" y1="-42" x2="0" y2="-124"/>
+      <line x1="0" y1="42" x2="0" y2="124"/>
+      <line x1="-42" y1="0" x2="-124" y2="0"/>
+      <line x1="42" y1="0" x2="124" y2="0"/>
+      <line x1="-30" y1="-30" x2="-88" y2="-88"/>
+      <line x1="30" y1="-30" x2="88" y2="-88"/>
+      <line x1="-30" y1="30" x2="-88" y2="88"/>
+      <line x1="30" y1="30" x2="88" y2="88"/>
+    </g>
+
+    <!-- Handle knobs on cardinal spokes -->
+    <g fill="url(#wheel)" opacity="0.95">
+      <circle cx="0" cy="-140" r="14"/>
+      <circle cx="0" cy="140" r="14"/>
+      <circle cx="-140" cy="0" r="14"/>
+      <circle cx="140" cy="0" r="14"/>
+      <circle cx="-97" cy="-97" r="12"/>
+      <circle cx="97" cy="-97" r="12"/>
+      <circle cx="-97" cy="97" r="12"/>
+      <circle cx="97" cy="97" r="12"/>
+    </g>
+  </g>
+
+  <!-- Docker container blocks (top-right area, like cargo on a ship) -->
+  <g opacity="0.92">
+    <rect x="326" y="82" width="44" height="32" rx="5" fill="#5effa0"/>
+    <rect x="378" y="82" width="44" height="32" rx="5" fill="#4fd6ff"/>
+    <rect x="352" y="44" width="44" height="32" rx="5" fill="#ffd84f"/>
+  </g>
 </svg>
