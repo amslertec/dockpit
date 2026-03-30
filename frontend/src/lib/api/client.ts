@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import type { ApiResponse } from './types';
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<ApiResponse<T>> {
-	const token = get(auth).token;
+	const token = get(auth).token || (typeof localStorage !== 'undefined' ? localStorage.getItem('dp_token') : null);
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 	if (token) headers['Authorization'] = `Bearer ${token}`;
 

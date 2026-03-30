@@ -26,7 +26,7 @@ fn get_secret() -> String {
 
 pub fn create_token(user_id: &str, username: &str, role: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::hours(2))
+        .checked_add_signed(chrono::Duration::days(7))
         .expect("valid timestamp")
         .timestamp() as usize;
 

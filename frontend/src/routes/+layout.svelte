@@ -56,7 +56,7 @@
 
 	async function loadEnvironments() {
 		if (envsLoaded) return;
-		const token = $auth.token;
+		const token = $auth.token || localStorage.getItem('dp_token');
 		if (!token) return;
 
 		try {
@@ -96,9 +96,8 @@
 			status = await api.get<AppStatus>('/status');
 		}
 		if (!status.success) {
-			// Still failing — if no stored token, likely fresh install → setup
-			// If there's a stored token, likely existing install with temp API issue → login
-			if ($auth.token) {
+			const storedToken = $auth.token || localStorage.getItem('dp_token');
+			if (storedToken) {
 				if (!isPublic) goto('/login');
 			} else {
 				if ($page.url.pathname !== '/setup') goto('/setup');
@@ -109,7 +108,9 @@
 
 		const done = status.data?.setup_complete;
 		if (!done && $page.url.pathname !== '/setup') { goto('/setup'); ready = true; return; }
-		if (done && !$auth.token && !isPublic) { goto('/login'); ready = true; return; }
+		// Check both store and localStorage (store might not be hydrated yet)
+		const hasToken = $auth.token || localStorage.getItem('dp_token');
+		if (done && !hasToken && !isPublic) { goto('/login'); ready = true; return; }
 
 		// Load environments before showing UI
 		await loadEnvironments();
