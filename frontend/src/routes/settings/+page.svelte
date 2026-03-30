@@ -8,6 +8,7 @@
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import { formatDateTime } from '$lib/utils/format';
 
 	let activeTab = $state(0);
 	let settings = $state<Record<string, string>>({});
@@ -364,7 +365,7 @@
 										<tr class="border-b border-theme last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
 											<td class="px-4 py-2.5 font-mono text-[11px] text-primary">{b.filename}</td>
 											<td class="px-3 py-2.5 text-secondary">{formatBytes(b.size_bytes)}</td>
-											<td class="px-3 py-2.5 text-secondary">{b.created_at.replace('T', ' ')}</td>
+											<td class="px-3 py-2.5 text-secondary">{formatDateTime(b.created_at)}</td>
 											<td class="px-4 py-2.5 text-right">
 												<div class="flex items-center justify-end gap-1">
 													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--accent)] hover:bg-[var(--accent-bg)] transition" onclick={() => downloadBackup(b.filename)}>{$t('settings.backupDownload')}</button>

@@ -2886,6 +2886,12 @@ fn get_backup_dir(state: &AppState) -> String {
     state.db.get_setting("backup_dir").unwrap_or_else(|| "/data/backups".to_string())
 }
 
+fn now_in_configured_tz(state: &AppState) -> chrono::DateTime<chrono_tz::Tz> {
+    let tz_name = state.db.get_setting("timezone").unwrap_or_else(|| "UTC".to_string());
+    let tz: chrono_tz::Tz = tz_name.parse().unwrap_or(chrono_tz::UTC);
+    chrono::Utc::now().with_timezone(&tz)
+}
+
 fn enforce_retention(dir: &str, max_count: usize) {
     let mut files: Vec<_> = std::fs::read_dir(dir).ok()
         .map(|entries| entries.filter_map(|e| e.ok())
@@ -2906,7 +2912,7 @@ pub async fn create_backup(
     headers: axum::http::HeaderMap,
 ) -> Json<ApiResponse<BackupInfo>> {
     let dir = get_backup_dir(&state);
-    let now = chrono::Local::now();
+    let now = now_in_configured_tz(&state);
     let filename = format!("dockpit_{}.db", now.format("%Y-%m-%d_%H-%M-%S"));
     let full_path = format!("{}/{}", dir, filename);
 
@@ -2919,7 +2925,7 @@ pub async fn create_backup(
             state.db.create_notification("backup_success", "Backup created", &filename).ok();
             state.db.log_audit(&audit_user(&headers), "backup_create", Some(&filename), None);
             Json(ApiResponse::ok(BackupInfo {
-                filename, size_bytes: size, created_at: now.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                filename, size_bytes: size, created_at: now.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
             }))
         }
         Err(e) => Json(ApiResponse::err(format!("Backup failed: {}", e))),
@@ -2930,6 +2936,9 @@ pub async fn list_backups(
     State(state): State<Arc<AppState>>,
 ) -> Json<ApiResponse<Vec<BackupInfo>>> {
     let dir = get_backup_dir(&state);
+    let now = now_in_configured_tz(&state);
+    let offset = now.format("%:z").to_string();
+
     let mut backups: Vec<BackupInfo> = std::fs::read_dir(&dir).ok()
         .map(|entries| entries.filter_map(|e| e.ok())
             .filter(|e| {
@@ -2941,7 +2950,7 @@ pub async fn list_backups(
                 let size = e.metadata().map(|m| m.len()).unwrap_or(0);
                 let ts = name.strip_prefix("dockpit_").and_then(|s| s.strip_suffix(".db")).unwrap_or("");
                 let formatted = if ts.len() >= 19 {
-                    format!("{}T{}", &ts[..10], ts[11..].replace('-', ":"))
+                    format!("{}T{}{}", &ts[..10], ts[11..].replace('-', ":"), offset)
                 } else { ts.to_string() };
                 BackupInfo { filename: name, size_bytes: size, created_at: formatted }
             }).collect())
@@ -3057,7 +3066,7 @@ pub async fn check_scheduled_backup(state: Arc<AppState>) {
     let backup_day = state.db.get_setting("backup_day").unwrap_or_else(|| "daily".to_string());
     let last_run = state.db.get_setting("backup_last_run").unwrap_or_default();
 
-    let now = chrono::Local::now();
+    let now = now_in_configured_tz(&state);
     let today = now.format("%Y-%m-%d").to_string();
     if last_run == today { return; }
 
