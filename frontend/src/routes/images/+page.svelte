@@ -92,6 +92,19 @@
 	let bulkRunning = $state(false);
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
 
+	let sortKey = $state<string>('tags');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
+
 	function toggleSelect(id: string) { const s = new Set(selected); if (s.has(id)) s.delete(id); else s.add(id); selected = s; }
 	function toggleAll() { selected = allSelected ? new Set() : new Set(paged.filter(i => !i.in_use).map(i => i.id)); }
 
@@ -124,6 +137,18 @@
 				i.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
 				i.id.toLowerCase().includes(search.toLowerCase())
 			)
+			.sort((a, b) => {
+				if (sortKey === 'tags') {
+					const av = (a.tags[0] || '').toLowerCase();
+					const bv = (b.tags[0] || '').toLowerCase();
+					return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+				}
+				const av = (a as any)[sortKey];
+				const bv = (b as any)[sortKey];
+				if (typeof av === 'number' && typeof bv === 'number') return sortAsc ? av - bv : bv - av;
+				if (typeof av === 'boolean' && typeof bv === 'boolean') return sortAsc ? (av === bv ? 0 : av ? -1 : 1) : (av === bv ? 0 : av ? 1 : -1);
+				return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+			})
 	);
 
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
@@ -257,11 +282,11 @@
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('images.repoTag')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">ID</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('images.size')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('images.created')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('tags')}>{$t('images.repoTag')}{sortIndicator('tags')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('id')}>ID{sortIndicator('id')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('size')}>{$t('images.size')}{sortIndicator('size')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('created')}>{$t('images.created')}{sortIndicator('created')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>
 				<tbody>

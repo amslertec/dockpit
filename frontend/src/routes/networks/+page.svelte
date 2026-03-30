@@ -23,10 +23,30 @@
 	let pruning = $state(false);
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
 
+	let sortKey = $state<string>('name');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
+
 	const filtered = $derived(
 		networks
 			.filter(n => { if (filter === 'used') return n.in_use; if (filter === 'unused') return !n.in_use; return true; })
 			.filter(n => n.name.toLowerCase().includes(search.toLowerCase()) || n.driver.toLowerCase().includes(search.toLowerCase()))
+		.sort((a, b) => {
+			const av = (a as any)[sortKey];
+			const bv = (b as any)[sortKey];
+			if (typeof av === 'number' && typeof bv === 'number') return sortAsc ? av - bv : bv - av;
+			if (typeof av === 'boolean' && typeof bv === 'boolean') return sortAsc ? (av === bv ? 0 : av ? -1 : 1) : (av === bv ? 0 : av ? 1 : -1);
+			return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+		})
 	);
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 	const allSelected = $derived(paged.length > 0 && paged.filter(n => !n.in_use && !isSystem(n)).every(n => selected.has(n.id)));
@@ -162,12 +182,12 @@
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('volumes.driver')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('networks.scope')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('containers.title')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell">ID</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('driver')}>{$t('volumes.driver')}{sortIndicator('driver')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('scope')}>{$t('networks.scope')}{sortIndicator('scope')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('containers_count')}>{$t('containers.title')}{sortIndicator('containers_count')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('id')}>ID{sortIndicator('id')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>
 				<tbody>

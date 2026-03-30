@@ -52,7 +52,29 @@
 		];
 	}
 
-	const filtered = $derived(stacks.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())));
+	let sortKey = $state<string>('name');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
+
+	const filtered = $derived(
+		stacks
+			.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
+			.sort((a, b) => {
+				const av = (a as any)[sortKey];
+				const bv = (b as any)[sortKey];
+				if (typeof av === 'number' && typeof bv === 'number') return sortAsc ? av - bv : bv - av;
+				return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+			})
+	);
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 
 	// Stats
@@ -245,10 +267,10 @@
 		<div class="overflow-x-auto">
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('stacks.services')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('stacks.path')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('status')}>{$t('common.status')}{sortIndicator('status')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('services_count')}>{$t('stacks.services')}{sortIndicator('services_count')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('path')}>{$t('stacks.path')}{sortIndicator('path')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>
 				<tbody>

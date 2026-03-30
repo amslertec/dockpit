@@ -21,9 +21,15 @@
 	const starting = $derived(containers.filter(c => c.health_status === 'starting'));
 	const noCheck = $derived(containers.filter(c => c.health_status === 'none'));
 
-	const paged = $derived(
-		perPage === 0 ? containers : containers.slice((page - 1) * perPage, page * perPage)
+	const sorted = $derived(
+		[...containers].sort((a, b) => {
+			const av = (a as any)[sortKey];
+			const bv = (b as any)[sortKey];
+			if (typeof av === 'number' && typeof bv === 'number') return sortAsc ? av - bv : bv - av;
+			return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+		})
 	);
+	const paged = $derived(perPage === 0 ? sorted : sorted.slice((page - 1) * perPage, page * perPage));
 
 	onMount(() => {
 		loadHealth();
@@ -88,6 +94,18 @@
 		const clean = name.startsWith('/') ? name.slice(1) : name;
 		return clean.length > 28 ? clean.slice(0, 28) + '...' : clean;
 	}
+	let sortKey = $state<string>('health_status');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
 </script>
 
 <div class="space-y-4">
@@ -149,12 +167,12 @@
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)]">
-							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('events.container')}</th>
-							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Image</th>
-							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('common.status')}</th>
+							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('events.container')}{sortIndicator('name')}</th>
+							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('image')}>Image{sortIndicator('image')}</th>
+							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('health_status')}>{$t('common.status')}{sortIndicator('health_status')}</th>
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('health.checkCmd')}</th>
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('health.interval')}</th>
-							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('health.failStreak')}</th>
+							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('failing_streak')}>{$t('health.failStreak')}{sortIndicator('failing_streak')}</th>
 						</tr>
 					</thead>
 					<tbody>

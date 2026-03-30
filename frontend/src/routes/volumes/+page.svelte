@@ -22,10 +22,31 @@
 	let pruning = $state(false);
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
 
+	let sortKey = $state<string>('name');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
+
 	const filtered = $derived(
 		volumes
 			.filter(v => { if (filter === 'used') return v.in_use; if (filter === 'unused') return !v.in_use; return true; })
 			.filter(v => v.name.toLowerCase().includes(search.toLowerCase()))
+			.sort((a, b) => {
+				if (sortKey === 'in_use') {
+					return sortAsc ? (a.in_use === b.in_use ? 0 : a.in_use ? -1 : 1) : (a.in_use === b.in_use ? 0 : a.in_use ? 1 : -1);
+				}
+				const av = (a as any)[sortKey];
+				const bv = (b as any)[sortKey];
+				return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+			})
 	);
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 	const allSelected = $derived(paged.length > 0 && paged.filter(v => !v.in_use).every(v => selected.has(v.name)));
@@ -156,9 +177,9 @@
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
-					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('volumes.driver')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('driver')}>{$t('volumes.driver')}{sortIndicator('driver')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('volumes.mountpoint')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>

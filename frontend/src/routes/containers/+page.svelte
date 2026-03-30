@@ -27,11 +27,31 @@
 	interface RecreateStep { text: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string; }
 	let recreateModal = $state<{ name: string; image: string; steps: RecreateStep[]; output: string; done: boolean } | null>(null);
 
+	let sortKey = $state<string>('name');
+	let sortAsc = $state(true);
+
+	function toggleSort(key: string) {
+		if (sortKey === key) { sortAsc = !sortAsc; }
+		else { sortKey = key; sortAsc = false; }
+	}
+
+	function sortIndicator(key: string): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
+
 	const filtered = $derived(
-		containers.filter(c =>
-			c.name.toLowerCase().includes(search.toLowerCase()) ||
-			c.image.toLowerCase().includes(search.toLowerCase())
-		)
+		containers
+			.filter(c =>
+				c.name.toLowerCase().includes(search.toLowerCase()) ||
+				c.image.toLowerCase().includes(search.toLowerCase())
+			)
+			.sort((a, b) => {
+				const av = (a as any)[sortKey];
+				const bv = (b as any)[sortKey];
+				if (typeof av === 'number' && typeof bv === 'number') return sortAsc ? av - bv : bv - av;
+				return sortAsc ? String(av ?? '').localeCompare(String(bv ?? '')) : String(bv ?? '').localeCompare(String(av ?? ''));
+			})
 	);
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 	const allSelected = $derived(paged.length > 0 && paged.every(c => selected.has(c.id)));
@@ -332,13 +352,13 @@
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2"></th>
 					<th class="w-10 px-4 py-2"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell">Stack</th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">Image</th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden xl:table-cell">IP</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('stack_name')}>Stack{sortIndicator('stack_name')}</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('image')}>Image{sortIndicator('image')}</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('state')}>{$t('common.status')}{sortIndicator('state')}</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden xl:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('ip_address')}>IP{sortIndicator('ip_address')}</th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell">Ports</th>
-					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden xl:table-cell">{$t('images.created')}</th>
+					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden xl:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('created')}>{$t('images.created')}{sortIndicator('created')}</th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>
 				<tbody>
