@@ -96,8 +96,13 @@
 			status = await api.get<AppStatus>('/status');
 		}
 		if (!status.success) {
-			// Still failing — assume fresh install, go to setup
-			if ($page.url.pathname !== '/setup') goto('/setup');
+			// Still failing — if no stored token, likely fresh install → setup
+			// If there's a stored token, likely existing install with temp API issue → login
+			if ($auth.token) {
+				if (!isPublic) goto('/login');
+			} else {
+				if ($page.url.pathname !== '/setup') goto('/setup');
+			}
 			ready = true;
 			return;
 		}

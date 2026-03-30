@@ -816,33 +816,48 @@ fn count_yaml_services(content: &str) -> usize {
 }
 
 async fn get_stack_containers_by_name(name: &str) -> Vec<ContainerInfo> {
+    let docker = match Docker::connect_with_socket_defaults() {
+        Ok(d) => d,
+        Err(_) => return vec![],
+    };
     let project = name.to_lowercase();
-    let out = tokio::process::Command::new("docker")
-        .args(["ps", "-a", "--filter", &format!("label=com.docker.compose.project={}", project),
-               "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Ports}}\t{{.CreatedAt}}\t{{.Label \"com.docker.compose.project\"}}"])
-        .output().await;
-    match out {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).lines()
-                .filter(|l| !l.trim().is_empty())
-                .map(|line| {
-                    let p: Vec<&str> = line.splitn(8, '\t').collect();
-                    ContainerInfo {
-                        id: p.first().unwrap_or(&"").to_string(),
-                        name: p.get(1).unwrap_or(&"").to_string(),
-                        image: p.get(2).unwrap_or(&"").to_string(),
-                        state: p.get(3).unwrap_or(&"").to_string(),
-                        status: p.get(4).unwrap_or(&"").to_string(),
-                        ports: vec![],
-                        created: 0,
-                        environment_id: None,
-                        ip_address: None, // Not available from docker ps
-                        stack_name: p.get(7).map(|s| s.to_string()).filter(|s| !s.is_empty()),
-                    }
-                }).collect()
-        }
-        _ => vec![],
+    let mut filters = std::collections::HashMap::new();
+    filters.insert("label".to_string(), vec![format!("com.docker.compose.project={}", project)]);
+    let opts = bollard::container::ListContainersOptions::<String> { all: true, filters, ..Default::default() };
+    let containers = match docker.list_containers(Some(opts)).await {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+
+    let mut result = Vec::new();
+    for c in containers {
+        let name_str = c.names.as_ref().and_then(|n| n.first()).map(|n| n.trim_start_matches('/').to_string()).unwrap_or_default();
+        let ports: Vec<PortMapping> = c.ports.unwrap_or_default().into_iter().map(|p| PortMapping {
+            private_port: p.private_port,
+            public_port: p.public_port,
+            port_type: p.typ.map(|t| format!("{:?}", t)).unwrap_or_else(|| "tcp".to_string()),
+        }).collect();
+        let ip = c.network_settings.as_ref()
+            .and_then(|ns| ns.networks.as_ref())
+            .and_then(|nets| nets.values().next())
+            .and_then(|n| n.ip_address.clone())
+            .filter(|ip| !ip.is_empty());
+        let stack = c.labels.as_ref().and_then(|l| l.get("com.docker.compose.project")).cloned();
+
+        result.push(ContainerInfo {
+            id: c.id.unwrap_or_default(),
+            name: name_str,
+            image: c.image.unwrap_or_default(),
+            state: c.state.unwrap_or_default(),
+            status: c.status.unwrap_or_default(),
+            ports,
+            created: c.created.unwrap_or(0),
+            environment_id: None,
+            ip_address: ip,
+            stack_name: stack,
+        });
     }
+    result
 }
 
 async fn get_compose_status(name: &str) -> (String, usize) {
