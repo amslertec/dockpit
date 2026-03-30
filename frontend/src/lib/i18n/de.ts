@@ -314,6 +314,9 @@ export const de: Record<string, string> = {
 	'profile.2faActivated': '2FA aktiviert',
 	'profile.2faDeactivated': '2FA deaktiviert',
 	'profile.invalidCode': 'Ungültiger Code',
+	'profile.backupCodes': 'Backup-Codes',
+	'profile.backupCodesDesc': 'Speichere diese Codes an einem sicheren Ort. Jeder Code kann einmalig anstelle eines 2FA-Codes verwendet werden, falls du keinen Zugriff auf deine Authenticator-App hast.',
+	'profile.backupCodesDone': 'Ich habe die Codes gespeichert',
 
 	// === Settings ===
 	'settings.title': 'Settings',

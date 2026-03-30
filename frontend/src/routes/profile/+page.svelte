@@ -34,6 +34,7 @@
 	let totpLoading = $state(false);
 	let disableCode = $state('');
 	let disableError = $state('');
+	let backupCodes = $state<string[]>([]);
 
 	onMount(async () => {
 		const r = await api.get<UserProfile>('/profile');
@@ -90,7 +91,8 @@
 		e.preventDefault();
 		totpError = '';
 		const r = await api.post<string>('/profile/totp/verify', { code: totpCode });
-		if (r.success) {
+		if (r.success && r.data) {
+			try { backupCodes = JSON.parse(r.data); } catch { backupCodes = []; }
 			toasts.success($t('profile.2faActivated'));
 			totpSetup = null;
 			totpCode = '';
@@ -171,7 +173,22 @@
 
 				<!-- Tab 2: 2FA -->
 				{:else if activeTab === 2}
-					{#if profile.totp_enabled}
+					{#if backupCodes.length > 0}
+						<!-- Backup Codes (shown once after activation) -->
+						<div class="mb-5 p-4 bg-[var(--bg-0)] border border-[var(--border)] rounded-lg max-w-sm">
+							<div class="flex items-center gap-2 mb-3">
+								<svg class="w-5 h-5 text-[var(--yellow)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+								<h4 class="text-sm font-semibold text-primary">{$t('profile.backupCodes')}</h4>
+							</div>
+							<p class="text-xs text-secondary mb-3">{$t('profile.backupCodesDesc')}</p>
+							<div class="grid grid-cols-2 gap-2 mb-3">
+								{#each backupCodes as code}
+									<div class="bg-card border border-theme rounded px-3 py-1.5 font-mono text-sm text-center text-primary select-all">{code}</div>
+								{/each}
+							</div>
+							<Button variant="secondary" size="sm" onclick={() => backupCodes = []}>{$t('profile.backupCodesDone')}</Button>
+						</div>
+					{:else if profile.totp_enabled}
 						<!-- 2FA is active -->
 						<div class="flex items-start gap-3 mb-5 p-3 bg-green-light rounded-lg">
 							<svg class="w-5 h-5 text-green shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>

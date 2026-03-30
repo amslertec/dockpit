@@ -330,6 +330,9 @@ export const en: Record<string, string> = {
 	'profile.2faActivated': '2FA activated',
 	'profile.2faDeactivated': '2FA deactivated',
 	'profile.invalidCode': 'Invalid code',
+	'profile.backupCodes': 'Backup Codes',
+	'profile.backupCodesDesc': 'Save these codes in a safe place. Each code can be used once instead of a 2FA code if you lose access to your authenticator app.',
+	'profile.backupCodesDone': 'I have saved the codes',
 
 	// === Settings ===
 	'settings.title': 'Settings',
