@@ -14,6 +14,7 @@
   <a href="https://hub.docker.com/r/amslertec/dockpit"><img src="https://img.shields.io/docker/pulls/amslertec/dockpit?color=blue&label=pulls" alt="Docker Pulls"></a>
   <a href="https://hub.docker.com/r/amslertec/dockpit"><img src="https://img.shields.io/docker/image-size/amslertec/dockpit/latest?label=image%20size" alt="Image Size"></a>
   <a href="https://github.com/sponsors/amslertec"><img src="https://img.shields.io/badge/sponsor-GitHub%20Sponsors-ea4aaa" alt="Sponsor"></a>
+  <a href="https://www.buymeacoffee.com/amslertec"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee"></a>
 </p>
 
 ---
@@ -216,7 +217,10 @@ Contributions are welcome! Please open an issue or pull request on [GitHub](http
 
 ## Sponsor
 
-If you find DockPit useful, consider [sponsoring the project](https://github.com/sponsors/amslertec) to support development.
+If you find DockPit useful, consider supporting the project:
+
+- [GitHub Sponsors](https://github.com/sponsors/amslertec)
+- [Buy Me a Coffee](https://www.buymeacoffee.com/amslertec)
 
 ## License
 
