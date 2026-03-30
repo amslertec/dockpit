@@ -52,7 +52,7 @@
 			{#if isLoading}
 				<div class="w-4 h-4 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin"></div>
 			{:else}
-				<img src="/logo.svg" alt="" class="w-5 h-5" />
+				<img src="/logo.png" alt="" class="w-5 h-5" />
 			{/if}
 		</div>
 		<div class="flex-1 min-w-0">

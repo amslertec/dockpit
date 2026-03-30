@@ -38,7 +38,7 @@
 
 	<a href="/" class="flex items-center gap-3 px-5 h-[60px] border-b border-[var(--border)] shrink-0" onclick={onclose}>
 		<div class="w-8 h-8 rounded-[var(--radius-md)] bg-gradient-to-br from-[var(--accent)] to-[#00b4d8] flex items-center justify-center shadow-[var(--shadow-glow)]">
-			<img src="/logo.svg" alt="DockPit" class="w-5 h-5 brightness-200" />
+			<img src="/logo.png" alt="DockPit" class="w-5 h-5" />
 		</div>
 		<span class="text-[15px] font-bold bg-gradient-to-r from-[var(--accent)] via-[#bf8aff] to-[#00b4d8] bg-clip-text text-transparent">DockPit</span>
 	</a>

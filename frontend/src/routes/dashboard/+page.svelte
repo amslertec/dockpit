@@ -51,7 +51,7 @@
 	{#if sys}
 		<div class="flex items-center gap-3 mb-4">
 			<div class="w-8 h-8 rounded-lg bg-green-light flex items-center justify-center shrink-0">
-				<img src="/logo.svg" alt="" class="w-5 h-5" />
+				<img src="/logo.png" alt="" class="w-5 h-5" />
 			</div>
 			<div>
 				<h2 class="text-base font-semibold text-primary">{serverName || envStoreName || sys.hostname}</h2>

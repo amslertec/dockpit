@@ -46,7 +46,7 @@
 		</div>
 		<div class="text-center mb-8">
 			<div class="w-14 h-14 mx-auto mb-4 rounded-[var(--radius-xl)] bg-gradient-to-br from-[var(--accent)] to-[#00b4d8] flex items-center justify-center shadow-[var(--shadow-glow)]">
-				<img src="/logo.svg" alt="DockPit" class="w-8 h-8 brightness-200" />
+				<img src="/logo.png" alt="DockPit" class="w-8 h-8" />
 			</div>
 			<h1 class="text-2xl font-bold bg-gradient-to-r from-[var(--accent)] via-[var(--purple)] to-[#00b4d8] bg-clip-text text-transparent">DockPit</h1>
 			<p class="text-[var(--text-muted)] text-sm mt-1.5">{$t('setup.title')}</p>
