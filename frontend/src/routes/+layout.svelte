@@ -89,8 +89,18 @@
 	onMount(async () => {
 		theme.init();
 
-		const status = await api.get<AppStatus>('/status');
-		if (!status.success) { ready = true; return; }
+		// Retry status check (server might still be starting)
+		let status = await api.get<AppStatus>('/status');
+		if (!status.success) {
+			await new Promise(r => setTimeout(r, 1500));
+			status = await api.get<AppStatus>('/status');
+		}
+		if (!status.success) {
+			// Still failing — assume fresh install, go to setup
+			if ($page.url.pathname !== '/setup') goto('/setup');
+			ready = true;
+			return;
+		}
 
 		const done = status.data?.setup_complete;
 		if (!done && $page.url.pathname !== '/setup') { goto('/setup'); ready = true; return; }
