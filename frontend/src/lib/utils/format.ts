@@ -70,10 +70,10 @@ export function extractHealth(status: string): string | undefined {
 }
 
 export function formatPorts(ports: { private_port: number; public_port?: number }[]): string {
-	return (
+	const unique = [...new Set(
 		ports
 			.filter((p) => p.public_port)
 			.map((p) => `${p.public_port}:${p.private_port}`)
-			.join(', ') || '—'
-	);
+	)];
+	return unique.join(', ') || '—';
 }

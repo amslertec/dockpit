@@ -3,7 +3,7 @@
 	import { api } from '$lib/api/client';
 	import { selectedEnv, environments } from '$lib/stores/environment';
 	import Badge from '$lib/components/ui/Badge.svelte';
-	import { extractHealth } from '$lib/utils/format';
+	import { extractHealth, formatPorts } from '$lib/utils/format';
 	import { t } from '$lib/i18n';
 	import type { EnvStats, SystemInfo, ContainerInfo } from '$lib/api/types';
 
@@ -153,7 +153,7 @@
 							<td class="px-4 py-2.5 text-xs text-secondary max-w-[150px] truncate">{c.image}</td>
 							<td class="px-4 py-2.5"><Badge status={c.state} health={extractHealth(c.status)} /></td>
 							<td class="px-4 py-2.5 text-xs text-secondary font-mono hidden md:table-cell">
-								{c.ports.filter(p => p.public_port).map(p => `${p.public_port}:${p.private_port}`).join(', ') || '—'}
+								{formatPorts(c.ports)}
 							</td>
 						</tr>
 					{:else}
