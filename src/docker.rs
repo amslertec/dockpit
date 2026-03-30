@@ -175,6 +175,10 @@ impl DockerClient {
         };
 
         let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
+        tracing::info!(
+            "Update check: {} — local={} remote={} outdated={}",
+            image, local_digest, remote_digest, outdated
+        );
         Ok((outdated, local_digest, remote_digest))
     }
 

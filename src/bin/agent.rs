@@ -370,6 +370,10 @@ async fn check_container_update(
     };
 
     let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
+    tracing::info!(
+        "Update check: {} — local={} remote={} outdated={}",
+        image_name, local_digest, remote_digest, outdated
+    );
     Ok(Json(ApiResponse::ok(ImageUpdateCheck {
         outdated, current_id: local_digest, latest_id: remote_digest, image: image_name,
     })))
