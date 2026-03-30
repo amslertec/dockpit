@@ -143,43 +143,62 @@ impl DockerClient {
         with_timeout(self.docker.inspect_image(name)).await
     }
 
-    /// Check if image has update available by comparing RepoDigest (local) with tag digest (remote).
-    /// Local: `docker inspect` → `.RepoDigests` (manifest digest recorded at pull time)
-    /// Remote: HEAD request to registry → `Docker-Content-Digest` header (current tag digest)
+    /// Check if image has update available using two-step comparison:
+    /// 1. Compare local image ID with remote manifest list digest (fast HEAD request)
+    /// 2. If no match, compare with remote config digest (handles attestation re-signing)
+    /// This works across Docker versions (29+ uses manifest digest as ID, older uses config digest).
     /// Returns (outdated: bool, local_digest, remote_digest)
     pub async fn check_image_update(&self, image: &str) -> Result<(bool, String, String), String> {
         let local = self.docker.inspect_image(image).await
             .map_err(|e| format!("Image not found: {}", e))?;
+        let local_id = local.id.clone().unwrap_or_default();
 
-        // Extract the repo digest (sha256:...) from RepoDigests
-        let local_digest = local.repo_digests.as_ref()
-            .and_then(|digests| digests.first())
-            .and_then(|d| d.split('@').nth(1))
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-
-        if local_digest.is_empty() {
-            // Locally-built images have no repo digest — can't check for updates
+        if local_id.is_empty() {
             return Ok((false, String::new(), String::new()));
         }
 
         let (registry, repo, tag) = parse_image_ref(image);
 
-        // Get current tag digest from registry via HEAD request
-        let remote_digest = match fetch_tag_digest(&registry, &repo, &tag).await {
+        // Step 1: Quick HEAD check — compare local ID with manifest list digest
+        let tag_digest = match fetch_tag_digest(&registry, &repo, &tag).await {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!("Registry check failed for {}: {}", image, e);
-                return Ok((false, local_digest.clone(), local_digest));
+                return Ok((false, local_id.clone(), local_id));
             }
         };
 
-        let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
-        tracing::info!(
-            "Update check: {} — local={} remote={} outdated={}",
-            image, local_digest, remote_digest, outdated
-        );
-        Ok((outdated, local_digest, remote_digest))
+        if local_id == tag_digest {
+            tracing::info!("Update check: {} — match on manifest digest — up-to-date", image);
+            return Ok((false, local_id, tag_digest));
+        }
+
+        // Step 2: Manifest list changed (attestation re-signing?) — compare config digests
+        let config_digest = match fetch_remote_config_digest(&registry, &repo, &tag).await {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Config digest check failed for {}: {}", image, e);
+                return Ok((false, local_id, tag_digest));
+            }
+        };
+
+        if local_id == config_digest {
+            tracing::info!("Update check: {} — match on config digest — up-to-date (attestation change only)", image);
+            return Ok((false, local_id, tag_digest));
+        }
+
+        // Also check RepoDigest as fallback (older Docker stores manifest list digest here)
+        let repo_digest = local.repo_digests.as_ref()
+            .and_then(|d| d.first())
+            .and_then(|d| d.split('@').nth(1))
+            .unwrap_or("");
+        if repo_digest == tag_digest || repo_digest == config_digest {
+            tracing::info!("Update check: {} — match on repo digest — up-to-date", image);
+            return Ok((false, local_id, tag_digest));
+        }
+
+        tracing::info!("Update check: {} — OUTDATED (local_id={} tag={} config={} repo={})", image, local_id, tag_digest, config_digest, repo_digest);
+        Ok((true, local_id, tag_digest))
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old

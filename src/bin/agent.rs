@@ -342,15 +342,9 @@ async fn check_container_update(
 
     let local_image = state.docker.inspect_image(&image_name).await
         .map_err(|_| StatusCode::NOT_FOUND)?;
+    let local_id = local_image.id.clone().unwrap_or_default();
 
-    // Extract RepoDigest (manifest digest recorded at pull time)
-    let local_digest = local_image.repo_digests.as_ref()
-        .and_then(|digests| digests.first())
-        .and_then(|d| d.split('@').nth(1))
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-
-    if local_digest.is_empty() {
+    if local_id.is_empty() {
         return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
             outdated: false, current_id: String::new(), latest_id: String::new(), image: image_name,
         })));
@@ -359,23 +353,51 @@ async fn check_container_update(
     let (registry, repo, tag) = parse_image_ref(&image_name);
     let creds = body.and_then(|Json(b)| b.credentials).unwrap_or_else(Vec::new);
 
-    // Get current remote tag digest via HEAD request
-    let remote_digest = match fetch_tag_digest(&registry, &repo, &tag, &creds).await {
+    // Step 1: Quick HEAD check — compare local ID with manifest list digest
+    let tag_digest = match fetch_tag_digest(&registry, &repo, &tag, &creds).await {
         Ok(d) => d,
         Err(_) => {
             return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-                outdated: false, current_id: local_digest.clone(), latest_id: local_digest, image: image_name,
+                outdated: false, current_id: local_id.clone(), latest_id: local_id, image: image_name,
             })));
         }
     };
 
-    let outdated = !remote_digest.is_empty() && local_digest != remote_digest;
-    tracing::info!(
-        "Update check: {} — local={} remote={} outdated={}",
-        image_name, local_digest, remote_digest, outdated
-    );
+    if local_id == tag_digest {
+        tracing::info!("Update check: {} — match on manifest digest — up-to-date", image_name);
+        return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
+            outdated: false, current_id: local_id, latest_id: tag_digest, image: image_name,
+        })));
+    }
+
+    // Step 2: Manifest list changed (attestation re-signing?) — compare config digests
+    let config_digest = match fetch_remote_config_digest(&registry, &repo, &tag, &creds).await {
+        Ok(d) => d,
+        Err(_) => String::new(),
+    };
+
+    if !config_digest.is_empty() && local_id == config_digest {
+        tracing::info!("Update check: {} — match on config digest — up-to-date (attestation change)", image_name);
+        return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
+            outdated: false, current_id: local_id, latest_id: tag_digest, image: image_name,
+        })));
+    }
+
+    // Step 3: Also check RepoDigest as fallback
+    let repo_digest = local_image.repo_digests.as_ref()
+        .and_then(|d| d.first())
+        .and_then(|d| d.split('@').nth(1))
+        .unwrap_or("");
+    if repo_digest == tag_digest || (!config_digest.is_empty() && repo_digest == config_digest) {
+        tracing::info!("Update check: {} — match on repo digest — up-to-date", image_name);
+        return Ok(Json(ApiResponse::ok(ImageUpdateCheck {
+            outdated: false, current_id: local_id, latest_id: tag_digest, image: image_name,
+        })));
+    }
+
+    tracing::info!("Update check: {} — OUTDATED (id={} tag={} cfg={} repo={})", image_name, local_id, tag_digest, config_digest, repo_digest);
     Ok(Json(ApiResponse::ok(ImageUpdateCheck {
-        outdated, current_id: local_digest, latest_id: remote_digest, image: image_name,
+        outdated: true, current_id: local_id, latest_id: tag_digest, image: image_name,
     })))
 }
 
