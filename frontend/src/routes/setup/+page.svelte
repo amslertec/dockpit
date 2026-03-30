@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
-	import type { LoginResponse, AppStatus } from '$lib/api/types';
+	import type { LoginResponse } from '$lib/api/types';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TextInput from '$lib/components/ui/TextInput.svelte';
 	import { t } from '$lib/i18n';
@@ -13,14 +12,6 @@
 	let password2 = $state('');
 	let error = $state('');
 	let loading = $state(false);
-
-	// If setup is already done, redirect to login
-	onMount(async () => {
-		const status = await api.get<AppStatus>('/status');
-		if (status.success && status.data?.setup_complete) {
-			goto('/login');
-		}
-	});
 
 	async function submit(e: Event) {
 		e.preventDefault();

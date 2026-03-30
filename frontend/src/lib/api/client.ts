@@ -10,13 +10,12 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<ApiResp
 	try {
 		const res = await fetch(`/api${path}`, { ...opts, headers });
 		if (res.status === 401) {
-			console.warn('[DockPit] 401 on', path, '— token sent:', !!token);
-			// Only logout + redirect for main API calls, not background requests
-			// Check if we're on a page that requires auth
-			if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/setup')) {
-				auth.logout();
-				// Use soft navigation instead of hard redirect to avoid loops
-				window.location.replace('/login');
+			// Token expired or invalid — clear auth and redirect to login
+			auth.logout();
+			if (typeof window !== 'undefined'
+				&& !window.location.pathname.startsWith('/login')
+				&& !window.location.pathname.startsWith('/setup')) {
+				window.location.href = '/login';
 			}
 			return { success: false, error: 'Sitzung abgelaufen' };
 		}

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth';
 	import { selectedEnv, environments } from '$lib/stores/environment';
@@ -14,12 +13,6 @@
 	let totpCode = $state('');
 	let error = $state('');
 	let loading = $state(false);
-
-	// If user already has a valid token, redirect away from login
-	onMount(() => {
-		const token = $auth.token || localStorage.getItem('dp_token');
-		if (token) goto('/');
-	});
 	let needs2FA = $state(false);
 
 	async function submit(e: Event) {

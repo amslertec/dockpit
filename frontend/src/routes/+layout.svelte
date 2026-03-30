@@ -89,35 +89,50 @@
 	onMount(async () => {
 		theme.init();
 
-		// Debug: log auth state at mount time
-		const dbgToken = localStorage.getItem('dp_token');
-		const dbgStoreToken = $auth.token;
-		console.log('[DockPit] onMount — localStorage token:', dbgToken ? dbgToken.substring(0, 20) + '...' : 'null');
-		console.log('[DockPit] onMount — store token:', dbgStoreToken ? dbgStoreToken.substring(0, 20) + '...' : 'null');
-		console.log('[DockPit] onMount — pathname:', $page.url.pathname, 'isPublic:', isPublic);
+		const hasToken = $auth.token || localStorage.getItem('dp_token');
+		const currentPath = $page.url.pathname;
 
-		// Retry status check (server might still be starting)
+		// 1. Check API status (with retry for slow startup)
 		let status = await api.get<AppStatus>('/status');
 		if (!status.success) {
 			await new Promise(r => setTimeout(r, 1500));
 			status = await api.get<AppStatus>('/status');
 		}
-		if (!status.success) {
-			// API not reachable — redirect to login (setup page will self-check)
-			if (!isPublic) goto('/login');
+
+		// 2. Route decision
+		if (status.success) {
+			const done = status.data?.setup_complete;
+			if (!done) {
+				// Setup not complete → go to setup
+				if (currentPath !== '/setup') goto('/setup');
+				ready = true;
+				return;
+			}
+			if (!hasToken && !isPublic) {
+				// No token → go to login
+				goto('/login');
+				ready = true;
+				return;
+			}
+		} else {
+			// API unreachable
+			if (!hasToken && !isPublic) {
+				goto('/login');
+				ready = true;
+				return;
+			}
+			// Has token but API failed — continue anyway, pages will handle errors
+		}
+
+		// 3. If on /login or /setup with a valid token, redirect to the app
+		if (hasToken && (currentPath === '/login' || currentPath === '/setup')) {
+			goto('/');
 			ready = true;
 			return;
 		}
 
-		const done = status.data?.setup_complete;
-		if (!done && $page.url.pathname !== '/setup') { goto('/setup'); ready = true; return; }
-		// Check both store and localStorage (store might not be hydrated yet)
-		const hasToken = $auth.token || localStorage.getItem('dp_token');
-		if (done && !hasToken && !isPublic) { goto('/login'); ready = true; return; }
-
-		// Load environments before showing UI
+		// 4. Load environments, then show the current page (don't redirect!)
 		await loadEnvironments();
-
 		ready = true;
 	});
 
