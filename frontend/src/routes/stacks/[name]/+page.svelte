@@ -50,7 +50,7 @@
 
 	onMount(() => load());
 
-	let skipNextUpdateCheck = false;
+	let skipNextUpdateCheck: string | false = false; // false or image name to carry over
 
 	async function load() {
 		if (!$selectedEnv || !stackName) return;
@@ -59,7 +59,14 @@
 		if (r.success && r.data) {
 			detail = r.data;
 			if (skipNextUpdateCheck) {
+				// Carry over up-to-date status to new container IDs with same image
+				const img = skipNextUpdateCheck;
 				skipNextUpdateCheck = false;
+				const m = new Map(updateStatus);
+				for (const c of r.data.containers) {
+					if (c.image === img) m.set(c.id, 'up-to-date');
+				}
+				updateStatus = m;
 			} else {
 				checkUpdatesInBackground();
 			}
@@ -137,7 +144,7 @@
 			}
 			m.set(id, 'up-to-date');
 			updateStatus = m;
-			skipNextUpdateCheck = true;
+			skipNextUpdateCheck = img || true;
 			setTimeout(load, 1500);
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');

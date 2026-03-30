@@ -40,7 +40,7 @@
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
 
-	let skipNextUpdateCheck = false;
+	let skipNextUpdateCheck: string | false = false;
 
 	async function load() {
 		if (!$selectedEnv) return;
@@ -49,7 +49,13 @@
 		if (r.success) {
 			containers = r.data || [];
 			if (skipNextUpdateCheck) {
+				const img = skipNextUpdateCheck;
 				skipNextUpdateCheck = false;
+				const m = new Map(updateStatus);
+				for (const c of containers) {
+					if (c.image === img) m.set(c.id, 'up-to-date');
+				}
+				updateStatus = m;
 			} else {
 				checkAllInBackground();
 			}
@@ -145,7 +151,7 @@
 			}
 			m.set(id, 'up-to-date');
 			updateStatus = m;
-			skipNextUpdateCheck = true;
+			skipNextUpdateCheck = img || 'unknown';
 			setTimeout(load, 1500);
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');
