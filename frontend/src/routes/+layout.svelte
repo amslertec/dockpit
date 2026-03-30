@@ -89,6 +89,13 @@
 	onMount(async () => {
 		theme.init();
 
+		// Debug: log auth state at mount time
+		const dbgToken = localStorage.getItem('dp_token');
+		const dbgStoreToken = $auth.token;
+		console.log('[DockPit] onMount — localStorage token:', dbgToken ? dbgToken.substring(0, 20) + '...' : 'null');
+		console.log('[DockPit] onMount — store token:', dbgStoreToken ? dbgStoreToken.substring(0, 20) + '...' : 'null');
+		console.log('[DockPit] onMount — pathname:', $page.url.pathname, 'isPublic:', isPublic);
+
 		// Retry status check (server might still be starting)
 		let status = await api.get<AppStatus>('/status');
 		if (!status.success) {
@@ -96,12 +103,8 @@
 			status = await api.get<AppStatus>('/status');
 		}
 		if (!status.success) {
-			const storedToken = $auth.token || localStorage.getItem('dp_token');
-			if (storedToken) {
-				if (!isPublic) goto('/login');
-			} else {
-				if ($page.url.pathname !== '/setup') goto('/setup');
-			}
+			// API not reachable — redirect to login (setup page will self-check)
+			if (!isPublic) goto('/login');
 			ready = true;
 			return;
 		}
