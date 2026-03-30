@@ -37,7 +37,7 @@
 	sidebar-glass">
 
 	<a href="/" class="flex items-center gap-3 px-5 h-[60px] border-b border-[var(--border)] shrink-0" onclick={onclose}>
-		<img src="/logo.png" alt="DockPit" class="w-8 h-8 rounded-[var(--radius-md)]" />
+		<img src="/logo.png" alt="DockPit" class="w-10 h-10 rounded-[var(--radius-md)]" />
 		<span class="text-[15px] font-bold bg-gradient-to-r from-[var(--accent)] via-[#bf8aff] to-[#00b4d8] bg-clip-text text-transparent">DockPit</span>
 	</a>
 
