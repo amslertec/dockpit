@@ -50,13 +50,19 @@
 
 	onMount(() => load());
 
+	let skipNextUpdateCheck = false;
+
 	async function load() {
 		if (!$selectedEnv || !stackName) return;
 		loading = true;
 		const r = await api.get<StackDetail>(`/env/${$selectedEnv}/stacks/${stackName}`);
 		if (r.success && r.data) {
 			detail = r.data;
-			checkUpdatesInBackground();
+			if (skipNextUpdateCheck) {
+				skipNextUpdateCheck = false;
+			} else {
+				checkUpdatesInBackground();
+			}
 			tabs = [
 				{ name: 'docker-compose.yml', content: r.data.compose_content, removable: false },
 				{ name: '.env', content: r.data.env_content || '', removable: false },
@@ -121,8 +127,17 @@
 			recreateModal.output = r.data || '';
 			recreateModal.done = true;
 			recreateModal = { ...recreateModal };
-			// Clear outdated status for this container
-			const m = new Map(updateStatus); m.set(id, 'up-to-date'); updateStatus = m;
+			// Mark all containers of this image as up-to-date (new container gets new ID)
+			const img = detail?.containers.find(x => x.id === id)?.image;
+			const m = new Map(updateStatus);
+			if (img && detail) {
+				for (const c of detail.containers) {
+					if (c.image === img) m.set(c.id, 'up-to-date');
+				}
+			}
+			m.set(id, 'up-to-date');
+			updateStatus = m;
+			skipNextUpdateCheck = true;
 			setTimeout(load, 1500);
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');

@@ -40,14 +40,19 @@
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
 
+	let skipNextUpdateCheck = false;
+
 	async function load() {
 		if (!$selectedEnv) return;
 		loading = true; selected = new Set();
 		const r = await api.get<ContainerInfo[]>(`/env/${$selectedEnv}/containers`);
 		if (r.success) {
 			containers = r.data || [];
-			// Start background update checks for running containers
-			checkAllInBackground();
+			if (skipNextUpdateCheck) {
+				skipNextUpdateCheck = false;
+			} else {
+				checkAllInBackground();
+			}
 		}
 		loading = false;
 	}
@@ -130,8 +135,17 @@
 			recreateModal.output = r.data || '';
 			recreateModal.done = true;
 			recreateModal = { ...recreateModal };
-			// Clear outdated status for this container
-			const m = new Map(updateStatus); m.set(id, 'up-to-date'); updateStatus = m;
+			// Mark this container (and others with same image) as up-to-date
+			const img = containers.find(x => x.id === id)?.image;
+			const m = new Map(updateStatus);
+			if (img) {
+				for (const c of containers) {
+					if (c.image === img) m.set(c.id, 'up-to-date');
+				}
+			}
+			m.set(id, 'up-to-date');
+			updateStatus = m;
+			skipNextUpdateCheck = true;
 			setTimeout(load, 1500);
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');

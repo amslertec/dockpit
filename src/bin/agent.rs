@@ -535,9 +535,12 @@ async fn recreate_container(
             let mut lines = vec![format!("Stack: {}, Service: {}", stack_name, svc), String::new()];
 
             lines.push("→ docker compose pull...".into());
-            if let Ok(p) = tokio::process::Command::new("docker").args(["compose", "pull", &svc]).current_dir(&dir).output().await {
+            if let Ok(p) = tokio::process::Command::new("docker").args(["compose", "pull", "--ignore-buildable", &svc]).current_dir(&dir).output().await {
                 for l in String::from_utf8_lossy(&p.stdout).lines().chain(String::from_utf8_lossy(&p.stderr).lines()) {
                     if !l.trim().is_empty() { lines.push(format!("  {}", l)); }
+                }
+                if !p.status.success() {
+                    tracing::warn!("docker compose pull failed for {}/{}", stack_name, svc);
                 }
             }
 
