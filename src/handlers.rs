@@ -227,10 +227,10 @@ pub async fn prometheus_metrics(
 
 // === Setup & Auth ===
 
-pub async fn get_status(State(state): State<Arc<AppState>>) -> Json<AppStatus> {
-    Json(AppStatus {
+pub async fn get_status(State(state): State<Arc<AppState>>) -> Json<ApiResponse<AppStatus>> {
+    Json(ApiResponse::ok(AppStatus {
         setup_complete: state.db.is_setup_complete(),
-    })
+    }))
 }
 
 pub async fn setup(
