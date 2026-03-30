@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { auth } from './auth';
+import { api } from '$lib/api/client';
 
 export interface WidgetLink {
 	title: string;
@@ -62,7 +63,31 @@ function loadData(): DashboardData {
 }
 
 function saveData(data: DashboardData) {
-	if (browser) localStorage.setItem(storageKey(), JSON.stringify(data));
+	if (!browser) return;
+	localStorage.setItem(storageKey(), JSON.stringify(data));
+	// Persist to backend (fire-and-forget)
+	const token = get(auth).token;
+	if (token) {
+		api.put('/dashboard-config', data).catch(() => {});
+	}
+}
+
+/** Load dashboard config from backend and merge into localStorage */
+export async function syncFromBackend(): Promise<boolean> {
+	if (!browser) return false;
+	const token = get(auth).token;
+	if (!token) return false;
+	try {
+		const r = await api.get<string>('/dashboard-config');
+		if (r.success && r.data && r.data.length > 0) {
+			const data: DashboardData = JSON.parse(r.data);
+			if (data.tabs && data.widgets) {
+				localStorage.setItem(storageKey(), JSON.stringify(data));
+				return true;
+			}
+		}
+	} catch {}
+	return false;
 }
 
 // Legacy compatibility
@@ -84,6 +109,11 @@ function createWidgetStore() {
 
 	return {
 		subscribe,
+
+		/** Reload store from localStorage (e.g. after syncFromBackend) */
+		reload() {
+			set(loadData().widgets);
+		},
 
 		init(envIds: string[]) {
 			const existing = loadWidgets();

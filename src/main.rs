@@ -214,6 +214,8 @@ async fn main() {
         .route("/api/updates/report", get(handlers::get_update_report))
         .route("/api/updates/status", get(handlers::get_update_check_status))
         .route("/api/ws-token", post(handlers::create_ws_token))
+        .route("/api/dashboard-config", get(handlers::get_dashboard_config))
+        .route("/api/dashboard-config", put(handlers::save_dashboard_config))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===

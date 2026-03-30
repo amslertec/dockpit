@@ -159,6 +159,12 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS dashboard_configs (
+                username TEXT PRIMARY KEY,
+                config_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE TABLE IF NOT EXISTS scheduled_jobs (
                 id TEXT PRIMARY KEY,
                 env_id TEXT NOT NULL,
@@ -473,6 +479,26 @@ impl Database {
             .unwrap()
             .filter_map(|r| r.ok())
             .collect()
+    }
+
+    // === Dashboard Configs ===
+
+    pub fn get_dashboard_config(&self, username: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT config_json FROM dashboard_configs WHERE username = ?1",
+            params![username],
+            |row| row.get(0),
+        ).ok()
+    }
+
+    pub fn save_dashboard_config(&self, username: &str, config_json: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO dashboard_configs (username, config_json, updated_at) VALUES (?1, ?2, datetime('now'))",
+            params![username, config_json],
+        )?;
+        Ok(())
     }
 
     // === Update Checks ===

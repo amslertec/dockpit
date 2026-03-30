@@ -443,6 +443,37 @@ pub async fn totp_disable(
     }
 }
 
+// === Dashboard Config ===
+
+pub async fn get_dashboard_config(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<ApiResponse<String>> {
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    match state.db.get_dashboard_config(&claims.username) {
+        Some(json) => Json(ApiResponse::ok(json)),
+        None => Json(ApiResponse::ok("".to_string())),
+    }
+}
+
+pub async fn save_dashboard_config(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> Json<ApiResponse<String>> {
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    match state.db.save_dashboard_config(&claims.username, &body) {
+        Ok(_) => Json(ApiResponse::ok("OK".to_string())),
+        Err(_) => Json(ApiResponse::err("Fehler beim Speichern")),
+    }
+}
+
 fn extract_claims(headers: &axum::http::HeaderMap) -> Option<Claims> {
     let header = headers.get("Authorization")?.to_str().ok()?;
     let token = header.strip_prefix("Bearer ")?;

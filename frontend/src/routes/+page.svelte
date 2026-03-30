@@ -2,7 +2,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { environments } from '$lib/stores/environment';
-	import { widgets, type WidgetConfig, getTabs, addTab, renameTab, removeTab, exportDashboard, importDashboard, type DashboardTab } from '$lib/stores/widgets';
+	import { widgets, syncFromBackend, type WidgetConfig, getTabs, addTab, renameTab, removeTab, exportDashboard, importDashboard, type DashboardTab } from '$lib/stores/widgets';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -92,6 +92,9 @@
 		const r = await api.get<ServerOverview[]>('/home/servers');
 		if (r.success && r.data) servers = r.data;
 		loading = false;
+		// Load dashboard config from backend (if available), then init
+		const synced = await syncFromBackend();
+		if (synced) widgets.reload();
 		widgets.init(servers.map(s => s.id));
 
 		await tick();
