@@ -34,6 +34,8 @@
 	let newTemplateCategory = $state('custom');
 	let newTemplateCompose = $state('');
 	let newTemplateEnv = $state('');
+	let newTemplateIcon = $state('📦');
+	const iconOptions = ['📦', '🐳', '🔀', '📊', '📈', '🐘', '🔴', '📝', '☁️', '🛡️', '🗼', '🌐', '⚙️', '🔧', '🗄️', '💾', '🔒', '📡', '🎯', '🚀'];
 
 	// Create modal state
 	let newName = $state('');
@@ -178,11 +180,11 @@
 			category: newTemplateCategory || 'custom',
 			compose_content: newTemplateCompose || `services:\n  app:\n    image: nginx:latest\n    ports:\n      - "8080:80"\n`,
 			env_content: newTemplateEnv.trim() || null,
-			icon: '📦'
+			icon: newTemplateIcon
 		});
 		if (r.success) {
 			toasts.success($t('templates.saved'));
-			newTemplateName = ''; newTemplateDesc = ''; newTemplateCompose = ''; newTemplateEnv = '';
+			newTemplateName = ''; newTemplateDesc = ''; newTemplateCompose = ''; newTemplateEnv = ''; newTemplateIcon = '📦';
 			showCreateTemplate = false;
 			loadTemplates();
 		} else toasts.error(r.error || $t('common.error'));
@@ -374,10 +376,10 @@
 		{#if templates.length === 0}
 			<div class="text-center py-10 text-sm text-muted">{$t('templates.noTemplates')}</div>
 		{:else}
-			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+			<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto pr-1">
 				{#each templates as tpl}
 					<button
-						class="relative group bg-[var(--bg-1)] border border-theme rounded-xl p-4 text-left transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[0_0_16px_-4px_var(--accent)] cursor-pointer"
+						class="relative group bg-[var(--bg-1)] border border-theme rounded-xl p-4 text-center transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[0_0_16px_-4px_var(--accent)] cursor-pointer flex flex-col items-center gap-2"
 						onclick={() => useTemplate(tpl)}
 					>
 						{#if !tpl.is_default}
@@ -389,22 +391,20 @@
 								<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 							</button>
 						{/if}
-						<div class="flex items-start gap-3">
-							<span class="text-2xl leading-none shrink-0">{tpl.icon || '📦'}</span>
-							<div class="min-w-0 flex-1">
-								<div class="font-semibold text-sm text-primary truncate">{tpl.name}</div>
-								{#if tpl.description}
-									<div class="text-[11px] text-muted mt-0.5 line-clamp-2">{tpl.description}</div>
-								{/if}
-								<div class="flex items-center gap-1.5 mt-2">
-									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[var(--bg-0)] border border-theme text-muted">{tpl.category}</span>
-									{#if tpl.is_default}
-										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--accent),transparent_85%)] text-accent border border-[color-mix(in_srgb,var(--accent),transparent_70%)]">{$t('templates.default')}</span>
-									{:else}
-										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--green),transparent_85%)] text-[var(--green)] border border-[color-mix(in_srgb,var(--green),transparent_70%)]">{$t('templates.custom')}</span>
-									{/if}
-								</div>
-							</div>
+						<div class="w-10 h-10 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center text-xl shrink-0">
+							{tpl.icon || '📦'}
+						</div>
+						<div class="font-semibold text-xs text-primary truncate w-full">{tpl.name}</div>
+						{#if tpl.description}
+							<div class="text-[10px] text-muted line-clamp-2 leading-tight">{tpl.description}</div>
+						{/if}
+						<div class="flex flex-wrap items-center justify-center gap-1 mt-auto pt-1">
+							<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-medium uppercase tracking-wide bg-[var(--bg-0)] border border-theme text-muted">{tpl.category}</span>
+							{#if tpl.is_default}
+								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--accent),transparent_85%)] text-accent border border-[color-mix(in_srgb,var(--accent),transparent_70%)]">{$t('templates.default')}</span>
+							{:else}
+								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-medium uppercase tracking-wide bg-[color-mix(in_srgb,var(--green),transparent_85%)] text-[var(--green)] border border-[color-mix(in_srgb,var(--green),transparent_70%)]">{$t('templates.custom')}</span>
+							{/if}
 						</div>
 					</button>
 				{/each}
@@ -424,8 +424,29 @@
 {#if showCreateTemplate}
 	<Modal title={$t('templates.createCustom')} onclose={() => showCreateTemplate = false}>
 		<div class="space-y-3">
-			<TextInput bind:value={newTemplateName} label={$t('templates.templateName')} placeholder="e.g. My Web Stack" id="tplname" />
-			<TextInput bind:value={newTemplateDesc} label={$t('templates.templateDesc')} placeholder="A short description..." id="tpldesc" />
+			<div class="flex items-start gap-3">
+				<div class="shrink-0">
+					<label class="block text-xs font-medium text-secondary mb-1">Icon</label>
+					<div class="relative">
+						<button
+							class="w-10 h-10 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center text-xl hover:border-[var(--accent)] transition-colors"
+							onclick={(e) => { e.preventDefault(); const el = (e.currentTarget as HTMLElement).nextElementSibling; if (el) el.classList.toggle('hidden'); }}
+						>{newTemplateIcon}</button>
+						<div class="hidden absolute top-12 left-0 z-50 bg-card border border-theme rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1 w-[180px]">
+							{#each iconOptions as ico}
+								<button
+									class="w-8 h-8 rounded-md flex items-center justify-center text-lg hover:bg-[var(--bg-hover)] transition-colors {newTemplateIcon === ico ? 'bg-[var(--bg-hover)] ring-1 ring-[var(--accent)]' : ''}"
+									onclick={(e) => { e.preventDefault(); newTemplateIcon = ico; (e.currentTarget as HTMLElement).parentElement?.classList.add('hidden'); }}
+								>{ico}</button>
+							{/each}
+						</div>
+					</div>
+				</div>
+				<div class="flex-1 space-y-3">
+					<TextInput bind:value={newTemplateName} label={$t('templates.templateName')} placeholder="e.g. My Web Stack" id="tplname" />
+					<TextInput bind:value={newTemplateDesc} label={$t('templates.templateDesc')} placeholder="A short description..." id="tpldesc" />
+				</div>
+			</div>
 			<div>
 				<label for="tplcompose" class="block text-xs font-medium text-secondary mb-1">docker-compose.yml</label>
 				<textarea id="tplcompose" bind:value={newTemplateCompose} spellcheck={false}
