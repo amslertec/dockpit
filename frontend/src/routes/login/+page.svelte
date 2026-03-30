@@ -52,10 +52,15 @@
 	<div class="login-card w-full max-w-[400px] p-8 md:p-10 relative">
 		<div class="absolute top-4 right-4">
 			<button
-				class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all duration-200 text-xs font-medium"
+				class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] hover:border-[var(--border-light)] transition-all duration-200 text-base leading-none"
 				onclick={() => locale.toggle()}
+				title={$locale === 'en' ? 'Deutsch' : 'English'}
 			>
-				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+				{#if $locale === 'en'}
+					<svg class="w-5 h-5" viewBox="0 0 36 36"><path fill="#FFCD05" d="M0 27a4 4 0 004 4h28a4 4 0 004-4v-3H0v3z"/><path fill="#ED1F24" d="M0 12h36v12H0z"/><path fill="#141414" d="M32 5H4a4 4 0 00-4 4v3h36V9a4 4 0 00-4-4z"/></svg>
+				{:else}
+					<svg class="w-5 h-5" viewBox="0 0 36 36"><path fill="#00247D" d="M32 5H4a4 4 0 00-4 4v18a4 4 0 004 4h28a4 4 0 004-4V9a4 4 0 00-4-4z"/><path fill="#CF1B2B" d="M22.6 13.5L36 7.3V9l-9.7 4.5h-3.7zM36 27l-14.2-6.5h3.7L36 25v2zM0 9v-1.7l14.2 6.5H10.5L0 9.3V9zM0 27v-2l10.5-4.5h3.7L0 27z"/><path fill="#EEE" d="M36 14.5v7H20.5V31h-5V21.5H0v-7h15.5V5h5v9.5z"/><path fill="#CF1B2B" d="M36 16v4H19v11h-2V20H0v-4h17V5h2v11z"/></svg>
+				{/if}
 			</button>
 		</div>
 		<div class="text-center mb-8">
