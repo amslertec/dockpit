@@ -1,8 +1,6 @@
 services:
   dockpit:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: amslertec/dockpit:latest
     container_name: dockpit
     restart: unless-stopped
     ports:
