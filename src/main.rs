@@ -161,7 +161,10 @@ async fn main() {
             // Collect events every 30 seconds (last 60s window)
             handlers::collect_events_since(scheduler_state.clone(), 60).await;
             // Cleanup old audit log entries every hour (every 120th tick)
-            if tick % 120 == 0 { scheduler_state.db.cleanup_old_audit(); }
+            if tick % 120 == 0 {
+                scheduler_state.db.cleanup_old_audit();
+                handlers::check_scheduled_backup(scheduler_state.clone()).await;
+            }
             // Run scheduled jobs every 60 seconds (every 2nd tick)
             if tick % 2 == 0 {
                 handlers::run_due_jobs(scheduler_state.clone()).await;
@@ -248,6 +251,12 @@ async fn main() {
         .route("/api/updates/check", post(handlers::run_update_check))
         .route("/api/updates/report", delete(handlers::clear_update_report))
         .route("/api/audit", get(handlers::get_audit_log))
+        .route("/api/backups", get(handlers::list_backups))
+        .route("/api/backups", post(handlers::create_backup))
+        .route("/api/backups/upload-restore", post(handlers::upload_restore))
+        .route("/api/backups/restore/{filename}", post(handlers::restore_backup))
+        .route("/api/backups/{filename}", get(handlers::download_backup))
+        .route("/api/backups/{filename}", delete(handlers::delete_backup))
         .route("/api/templates", get(handlers::list_templates))
         .route("/api/templates", post(handlers::create_template))
         .route("/api/templates/{id}", get(handlers::get_template))

@@ -6,6 +6,7 @@ use crate::models::{EnvironmentInfo, UpdateCheckResult, ScheduledJob, Notificati
 
 pub struct Database {
     conn: Mutex<Connection>,
+    pub path: String,
 }
 
 impl Database {
@@ -25,6 +26,7 @@ impl Database {
 
         let db = Self {
             conn: Mutex::new(conn),
+            path: path.to_string(),
         };
         db.migrate()?;
         Ok(db)
@@ -424,6 +426,27 @@ impl Database {
     }
 
     // === Settings (key-value store) ===
+
+    /// Create a consistent backup using SQLite's online backup API
+    pub fn backup_to(&self, dest_path: &str) -> Result<(), String> {
+        if let Some(parent) = Path::new(dest_path).parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create backup dir: {}", e))?;
+        }
+        let conn = self.conn.lock().unwrap();
+        let mut dest = Connection::open(dest_path).map_err(|e| e.to_string())?;
+        let backup = rusqlite::backup::Backup::new(&conn, &mut dest).map_err(|e| e.to_string())?;
+        backup.run_to_completion(100, std::time::Duration::from_millis(250), None)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Restore from a backup file by backing up from source into live connection
+    pub fn restore_from(&self, source_path: &str) -> Result<(), String> {
+        let src = Connection::open(source_path).map_err(|e| e.to_string())?;
+        let mut conn = self.conn.lock().unwrap();
+        let backup = rusqlite::backup::Backup::new(&src, &mut conn).map_err(|e| e.to_string())?;
+        backup.run_to_completion(100, std::time::Duration::from_millis(250), None)
+            .map_err(|e| e.to_string())
+    }
 
     pub fn get_setting(&self, key: &str) -> Option<String> {
         let conn = self.conn.lock().unwrap();

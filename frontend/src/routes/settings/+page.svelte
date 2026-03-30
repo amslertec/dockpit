@@ -56,11 +56,23 @@
 		{ value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
 	];
 
+	// Backup
+	let backupDir = $state('/data/backups');
+	let backupEnabled = $state(false);
+	let backupDay = $state('daily');
+	let backupTime = $state('02:00');
+	let backupRetention = $state('7');
+	let backups = $state<Array<{filename: string; size_bytes: number; created_at: string}>>([]);
+	let creatingBackup = $state(false);
+	let confirm = $state<{ message: string; action: () => void } | null>(null);
+	let uploadFile = $state<File | null>(null);
+
 	const tabs = [
 		{ id: 0, label: $t('profile.general') },
 		{ id: 1, label: $t('settings.updateMonitor') },
 		{ id: 2, label: $t('settings.webhooks') },
 		{ id: 3, label: $t('settings.email') },
+		{ id: 4, label: $t('settings.backup') },
 	];
 
 	onMount(async () => {
@@ -79,8 +91,14 @@
 			updateInterval = settings['update_interval'] || '24';
 			updateEnabled = settings['update_enabled'] === 'true';
 			timezone = settings['timezone'] || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+			backupDir = settings['backup_dir'] || '/data/backups';
+			backupEnabled = settings['backup_enabled'] === 'true';
+			backupDay = settings['backup_day'] || 'daily';
+			backupTime = settings['backup_time'] || '02:00';
+			backupRetention = settings['backup_retention'] || '7';
 		}
 		loading = false;
+		loadBackups();
 	});
 
 	async function save() {
@@ -91,12 +109,73 @@
 			smtp_from: smtpFrom, smtp_to: smtpTo, smtp_tls: String(smtpTls),
 			update_interval: updateInterval, update_enabled: String(updateEnabled),
 			timezone,
+			backup_dir: backupDir, backup_enabled: String(backupEnabled),
+			backup_day: backupDay, backup_time: backupTime, backup_retention: backupRetention,
 		};
 		const r = await api.post<string>('/settings', { settings: s });
 		saving = false;
 		localStorage.setItem('dp_timezone', timezone);
 		if (r.success) toasts.success($t('settings.saved'));
 		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function loadBackups() {
+		const r = await api.get<Array<{filename: string; size_bytes: number; created_at: string}>>('/backups');
+		if (r.success && r.data) backups = r.data;
+	}
+
+	async function createBackup() {
+		creatingBackup = true;
+		const r = await api.post('/backups', {});
+		creatingBackup = false;
+		if (r.success) { toasts.success($t('settings.backupCreated')); loadBackups(); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function deleteBackup(filename: string) {
+		const r = await api.del(`/backups/${filename}`);
+		if (r.success) { toasts.success('Deleted'); loadBackups(); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function restoreBackup(filename: string) {
+		const r = await api.post(`/backups/restore/${filename}`, {});
+		if (r.success) toasts.success($t('settings.backupRestored'));
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function downloadBackup(filename: string) {
+		const token = localStorage.getItem('dp_token') || '';
+		const res = await fetch(`/api/backups/${filename}`, { headers: { Authorization: `Bearer ${token}` } });
+		if (!res.ok) { toasts.error('Download failed'); return; }
+		const blob = await res.blob();
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(a.href);
+	}
+
+	async function handleUploadRestore() {
+		if (!uploadFile) return;
+		const formData = new FormData();
+		formData.append('file', uploadFile);
+		const token = localStorage.getItem('dp_token') || '';
+		const res = await fetch('/api/backups/upload-restore', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}` },
+			body: formData,
+		});
+		const data = await res.json();
+		if (data.success) toasts.success($t('settings.backupRestored'));
+		else toasts.error(data.error || $t('common.error'));
+		uploadFile = null;
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+		return (bytes / 1048576).toFixed(1) + ' MB';
 	}
 
 	async function testWebhook() {
@@ -209,7 +288,125 @@
 
 					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
 				</div>
+
+			<!-- Backup -->
+			{:else if activeTab === 4}
+				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.backupTitle')}</h3>
+				<p class="text-xs text-secondary mb-4">{$t('settings.backupDesc')}</p>
+
+				<div class="max-w-lg space-y-4">
+					<!-- Config -->
+					<TextInput bind:value={backupDir} label={$t('settings.backupDir')} />
+					<p class="text-[10px] text-muted -mt-2">{$t('settings.backupDirDesc')}</p>
+
+					<div class="border-t border-theme pt-4">
+						<h4 class="text-xs font-semibold text-primary mb-3">{$t('settings.backupSchedule')}</h4>
+						<CustomCheckbox checked={backupEnabled} onchange={(v) => backupEnabled = v} label={$t('settings.backupEnable')} />
+
+						{#if backupEnabled}
+							<div class="grid grid-cols-3 gap-3 mt-3">
+								<div>
+									<label class="text-[11px] font-medium text-secondary block mb-1">{$t('settings.backupDay')}</label>
+									<CustomSelect
+										options={[
+											{value: 'daily', label: $t('settings.backupDaily')},
+											{value: '1', label: $t('settings.backupMonday')},
+											{value: '2', label: $t('settings.backupTuesday')},
+											{value: '3', label: $t('settings.backupWednesday')},
+											{value: '4', label: $t('settings.backupThursday')},
+											{value: '5', label: $t('settings.backupFriday')},
+											{value: '6', label: $t('settings.backupSaturday')},
+											{value: '7', label: $t('settings.backupSunday')},
+										]}
+										value={backupDay}
+										onchange={(v) => backupDay = String(v)}
+									/>
+								</div>
+								<div>
+									<label class="text-[11px] font-medium text-secondary block mb-1">{$t('settings.backupTime')}</label>
+									<input type="time" bind:value={backupTime} class="w-full px-3 py-2 rounded-[var(--radius-md)] border border-theme bg-[var(--bg-1)] text-[var(--text)] text-xs" />
+								</div>
+								<div>
+									<label class="text-[11px] font-medium text-secondary block mb-1">{$t('settings.backupRetention')}</label>
+									<div class="flex items-center gap-2">
+										<input type="number" bind:value={backupRetention} min="1" max="100" class="w-20 px-3 py-2 rounded-[var(--radius-md)] border border-theme bg-[var(--bg-1)] text-[var(--text)] text-xs" />
+										<span class="text-[11px] text-muted">{$t('settings.backupRetentionSuffix')}</span>
+									</div>
+								</div>
+							</div>
+						{/if}
+					</div>
+
+					<div class="flex gap-2">
+						<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
+						<Button variant="secondary" size="md" onclick={createBackup} loading={creatingBackup}>{$t('settings.backupNow')}</Button>
+					</div>
+				</div>
+
+				<!-- Backup List -->
+				<div class="border-t border-theme pt-5 mt-6">
+					<h4 class="text-xs font-semibold text-primary mb-3">{$t('settings.backupList')}</h4>
+					{#if backups.length === 0}
+						<p class="text-xs text-muted">{$t('settings.backupNoBackups')}</p>
+					{:else}
+						<div class="bg-card rounded-[var(--radius-lg)] border border-theme overflow-hidden">
+							<table class="w-full text-xs">
+								<thead>
+									<tr class="border-b border-theme">
+										<th class="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted">Filename</th>
+										<th class="text-left px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted">{$t('settings.backupSize')}</th>
+										<th class="text-left px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted">{$t('settings.backupDate')}</th>
+										<th class="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted">{$t('common.actions')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each backups as b}
+										<tr class="border-b border-theme last:border-0 hover:bg-[var(--bg-hover)] transition-colors">
+											<td class="px-4 py-2.5 font-mono text-[11px] text-primary">{b.filename}</td>
+											<td class="px-3 py-2.5 text-secondary">{formatBytes(b.size_bytes)}</td>
+											<td class="px-3 py-2.5 text-secondary">{b.created_at.replace('T', ' ')}</td>
+											<td class="px-4 py-2.5 text-right">
+												<div class="flex items-center justify-end gap-1">
+													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--accent)] hover:bg-[var(--accent-bg)] transition" onclick={() => downloadBackup(b.filename)}>{$t('settings.backupDownload')}</button>
+													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--purple)] hover:bg-purple-light transition" onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; restoreBackup(b.filename); } }}>{$t('settings.backupRestore')}</button>
+													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--red)] hover:bg-[var(--red-bg)] transition" onclick={() => confirm = { message: $t('settings.backupDeleteConfirm'), action: () => { confirm = null; deleteBackup(b.filename); } }}>{$t('settings.backupDelete')}</button>
+												</div>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Upload Restore -->
+				<div class="border-t border-theme pt-5 mt-6">
+					<h4 class="text-xs font-semibold text-primary mb-2">{$t('settings.backupUpload')}</h4>
+					<p class="text-[10px] text-muted mb-3">{$t('settings.backupUploadDesc')}</p>
+					<div class="flex items-center gap-3">
+						<input type="file" accept=".db" class="text-xs text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-theme file:text-xs file:font-medium file:bg-[var(--bg-1)] file:text-primary hover:file:bg-[var(--bg-hover)] file:transition file:cursor-pointer" onchange={(e) => { const t = e.target as HTMLInputElement; uploadFile = t.files?.[0] || null; }} />
+						{#if uploadFile}
+							<Button variant="danger" size="sm" onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; handleUploadRestore(); } }}>{$t('settings.backupRestore')}</Button>
+						{/if}
+					</div>
+				</div>
 			{/if}
 		</div>
 	</div>
 </div>
+
+<!-- Confirm Dialog -->
+{#if confirm}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onclick={(e) => { if (e.target === e.currentTarget) confirm = null; }}>
+		<div class="bg-card border border-theme rounded-xl p-6 max-w-sm w-full shadow-xl">
+			<p class="text-sm text-primary mb-4">{confirm.message}</p>
+			<div class="flex justify-end gap-2">
+				<Button variant="secondary" size="sm" onclick={() => confirm = null}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={confirm.action}>{$t('common.confirm')}</Button>
+			</div>
+		</div>
+	</div>
+{/if}

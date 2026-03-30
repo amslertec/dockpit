@@ -334,6 +334,13 @@ pub struct VulnScanStatus {
     pub done: usize,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackupInfo {
+    pub filename: String,
+    pub size_bytes: u64,
+    pub created_at: String,
+}
+
 // === Live Stats Models ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

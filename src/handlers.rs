@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State, ws::{Message, WebSocket, WebSocketUpgrade}},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     Json,
 };
@@ -2876,6 +2876,216 @@ pub async fn env_redeploy_stack(
         match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&()).send().await {
             Ok(resp) => match resp.json::<ApiResponse<String>>().await { Ok(d) => Json(d), Err(e) => Json(ApiResponse::err(e.to_string())) },
             Err(e) => Json(ApiResponse::err(format!("Agent: {}", e))),
+        }
+    }
+}
+
+// === Backup & Restore ===
+
+fn get_backup_dir(state: &AppState) -> String {
+    state.db.get_setting("backup_dir").unwrap_or_else(|| "/data/backups".to_string())
+}
+
+fn enforce_retention(dir: &str, max_count: usize) {
+    let mut files: Vec<_> = std::fs::read_dir(dir).ok()
+        .map(|entries| entries.filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.starts_with("dockpit_") && n.ends_with(".db")
+            }).collect())
+        .unwrap_or_default();
+    files.sort_by_key(|e| e.file_name());
+    while files.len() > max_count {
+        if let Some(oldest) = files.first() { std::fs::remove_file(oldest.path()).ok(); }
+        files.remove(0);
+    }
+}
+
+pub async fn create_backup(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<ApiResponse<BackupInfo>> {
+    let dir = get_backup_dir(&state);
+    let now = chrono::Local::now();
+    let filename = format!("dockpit_{}.db", now.format("%Y-%m-%d_%H-%M-%S"));
+    let full_path = format!("{}/{}", dir, filename);
+
+    match state.db.backup_to(&full_path) {
+        Ok(_) => {
+            let size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
+            let retention: usize = state.db.get_setting("backup_retention")
+                .and_then(|v| v.parse().ok()).unwrap_or(7);
+            enforce_retention(&dir, retention);
+            state.db.create_notification("backup_success", "Backup created", &filename).ok();
+            state.db.log_audit(&audit_user(&headers), "backup_create", Some(&filename), None);
+            Json(ApiResponse::ok(BackupInfo {
+                filename, size_bytes: size, created_at: now.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            }))
+        }
+        Err(e) => Json(ApiResponse::err(format!("Backup failed: {}", e))),
+    }
+}
+
+pub async fn list_backups(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<BackupInfo>>> {
+    let dir = get_backup_dir(&state);
+    let mut backups: Vec<BackupInfo> = std::fs::read_dir(&dir).ok()
+        .map(|entries| entries.filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.starts_with("dockpit_") && n.ends_with(".db")
+            })
+            .map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+                let ts = name.strip_prefix("dockpit_").and_then(|s| s.strip_suffix(".db")).unwrap_or("");
+                let formatted = if ts.len() >= 19 {
+                    format!("{}T{}", &ts[..10], ts[11..].replace('-', ":"))
+                } else { ts.to_string() };
+                BackupInfo { filename: name, size_bytes: size, created_at: formatted }
+            }).collect())
+        .unwrap_or_default();
+    backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Json(ApiResponse::ok(backups))
+}
+
+pub async fn download_backup(
+    State(state): State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    if filename.contains("..") || filename.contains('/') || !filename.starts_with("dockpit_") {
+        return (StatusCode::BAD_REQUEST, "Invalid filename").into_response();
+    }
+    let path = format!("{}/{}", get_backup_dir(&state), filename);
+    match std::fs::read(&path) {
+        Ok(data) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+                (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename)),
+            ],
+            data,
+        ).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Backup not found").into_response(),
+    }
+}
+
+pub async fn delete_backup(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(filename): Path<String>,
+) -> Json<ApiResponse<String>> {
+    if filename.contains("..") || filename.contains('/') || !filename.starts_with("dockpit_") {
+        return Json(ApiResponse::err("Invalid filename"));
+    }
+    let path = format!("{}/{}", get_backup_dir(&state), filename);
+    match std::fs::remove_file(&path) {
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "backup_delete", Some(&filename), None);
+            Json(ApiResponse::ok("Deleted".to_string()))
+        }
+        Err(e) => Json(ApiResponse::err(format!("Delete failed: {}", e))),
+    }
+}
+
+pub async fn restore_backup(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(filename): Path<String>,
+) -> Json<ApiResponse<String>> {
+    if filename.contains("..") || filename.contains('/') || !filename.starts_with("dockpit_") {
+        return Json(ApiResponse::err("Invalid filename"));
+    }
+    let path = format!("{}/{}", get_backup_dir(&state), filename);
+    if !std::path::Path::new(&path).exists() {
+        return Json(ApiResponse::err("Backup not found"));
+    }
+    state.db.log_audit(&audit_user(&headers), "backup_restore", Some(&filename), None);
+    match state.db.restore_from(&path) {
+        Ok(_) => {
+            tracing::info!("Database restored from {}", filename);
+            Json(ApiResponse::ok("Restored".to_string()))
+        }
+        Err(e) => Json(ApiResponse::err(format!("Restore failed: {}", e))),
+    }
+}
+
+pub async fn upload_restore(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    mut multipart: axum::extract::Multipart,
+) -> Json<ApiResponse<String>> {
+    let dir = get_backup_dir(&state);
+    std::fs::create_dir_all(&dir).ok();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() == Some("file") {
+            let data = match field.bytes().await {
+                Ok(d) => d,
+                Err(e) => return Json(ApiResponse::err(format!("Upload failed: {}", e))),
+            };
+            if data.len() < 16 || &data[..16] != b"SQLite format 3\0" {
+                return Json(ApiResponse::err("Invalid file: not a SQLite database"));
+            }
+            let temp_path = format!("{}/upload_restore_temp.db", dir);
+            if let Err(e) = std::fs::write(&temp_path, &data) {
+                return Json(ApiResponse::err(format!("Write failed: {}", e)));
+            }
+            state.db.log_audit(&audit_user(&headers), "backup_restore_upload", None, None);
+            match state.db.restore_from(&temp_path) {
+                Ok(_) => {
+                    std::fs::remove_file(&temp_path).ok();
+                    tracing::info!("Database restored from uploaded file");
+                    return Json(ApiResponse::ok("Restored".to_string()));
+                }
+                Err(e) => {
+                    std::fs::remove_file(&temp_path).ok();
+                    return Json(ApiResponse::err(format!("Restore failed: {}", e)));
+                }
+            }
+        }
+    }
+    Json(ApiResponse::err("No file uploaded"))
+}
+
+pub async fn check_scheduled_backup(state: Arc<AppState>) {
+    let enabled = state.db.get_setting("backup_enabled").unwrap_or_default() == "true";
+    if !enabled { return; }
+
+    let backup_time = state.db.get_setting("backup_time").unwrap_or_else(|| "02:00".to_string());
+    let backup_day = state.db.get_setting("backup_day").unwrap_or_else(|| "daily".to_string());
+    let last_run = state.db.get_setting("backup_last_run").unwrap_or_default();
+
+    let now = chrono::Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    if last_run == today { return; }
+
+    if backup_day != "daily" {
+        let weekday = now.format("%u").to_string();
+        if weekday != backup_day { return; }
+    }
+
+    let current_time = now.format("%H:%M").to_string();
+    if current_time < backup_time { return; }
+
+    let dir = get_backup_dir(&state);
+    let filename = format!("dockpit_{}.db", now.format("%Y-%m-%d_%H-%M-%S"));
+    let full_path = format!("{}/{}", dir, filename);
+
+    match state.db.backup_to(&full_path) {
+        Ok(_) => {
+            let retention: usize = state.db.get_setting("backup_retention")
+                .and_then(|v| v.parse().ok()).unwrap_or(7);
+            enforce_retention(&dir, retention);
+            state.db.set_setting("backup_last_run", &today).ok();
+            state.db.create_notification("backup_success", "Scheduled backup created", &filename).ok();
+            state.db.log_audit("system", "backup_scheduled", Some(&filename), None);
+            tracing::info!("Scheduled backup created: {}", filename);
+        }
+        Err(e) => {
+            state.db.create_notification("backup_failed", "Scheduled backup failed", &e).ok();
+            tracing::error!("Scheduled backup failed: {}", e);
         }
     }
 }
