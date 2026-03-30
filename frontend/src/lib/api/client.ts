@@ -10,7 +10,28 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<ApiResp
 	try {
 		const res = await fetch(`/api${path}`, { ...opts, headers });
 		if (res.status === 401) {
-			// Token expired or invalid — clear auth and redirect to login
+			// Try to refresh the token once
+			if (token && path !== '/refresh') {
+				const refreshRes = await fetch('/api/refresh', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+				});
+				if (refreshRes.ok) {
+					try {
+						const refreshData = JSON.parse(await refreshRes.text());
+						if (refreshData.success && refreshData.data?.token) {
+							auth.login(refreshData.data.token, refreshData.data.username);
+							// Retry original request with new token
+							headers['Authorization'] = `Bearer ${refreshData.data.token}`;
+							const retry = await fetch(`/api${path}`, { ...opts, headers });
+							const retryText = await retry.text();
+							if (!retryText) return retry.ok ? { success: true } as ApiResponse<T> : { success: false, error: `HTTP ${retry.status}` };
+							try { return JSON.parse(retryText); } catch { return retry.ok ? { success: true } as ApiResponse<T> : { success: false, error: retryText }; }
+						}
+					} catch {}
+				}
+			}
+			// Refresh failed — logout
 			auth.logout();
 			if (typeof window !== 'undefined'
 				&& !window.location.pathname.startsWith('/login')

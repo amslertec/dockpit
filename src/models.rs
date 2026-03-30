@@ -235,8 +235,9 @@ pub struct UserProfile {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TotpSetupResponse {
     pub secret: String,
-    pub qr_code: String, // base64 PNG
+    pub qr_code: String,
     pub otpauth_url: String,
+    pub backup_codes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -429,6 +430,7 @@ pub struct AuditEntry {
     pub target: Option<String>,
     pub details: Option<String>,
     pub created_at: String,
+    pub hash: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

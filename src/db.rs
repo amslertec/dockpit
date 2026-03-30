@@ -68,6 +68,10 @@ impl Database {
 
         // Migration: add totp_secret column
         conn.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT", []).ok();
+        conn.execute("ALTER TABLE users ADD COLUMN backup_codes TEXT", []).ok();
+
+        // Migration: add hash column to audit_log
+        conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT", []).ok();
 
         // Migration: add role column to users if not exists
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'", []).ok();
@@ -303,6 +307,24 @@ impl Database {
         conn.execute(
             "UPDATE users SET totp_secret = ?1 WHERE username = ?2",
             params![secret, username],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_backup_codes(&self, username: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT backup_codes FROM users WHERE username = ?1",
+            params![username],
+            |row| row.get::<_, Option<String>>(0),
+        ).ok().flatten()
+    }
+
+    pub fn set_backup_codes(&self, username: &str, codes: Option<&str>) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE users SET backup_codes = ?1 WHERE username = ?2",
+            params![codes, username],
         )?;
         Ok(())
     }
@@ -708,15 +730,26 @@ impl Database {
 
     pub fn log_audit(&self, username: &str, action: &str, target: Option<&str>, details: Option<&str>) {
         let conn = self.conn.lock().unwrap();
+        // Get the hash of the last entry for chain integrity
+        let prev_hash: String = conn.query_row(
+            "SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        ).ok().flatten().unwrap_or_else(|| "genesis".to_string());
+
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let payload = format!("{}|{}|{}|{}|{}|{}", prev_hash, timestamp, username, action, target.unwrap_or(""), details.unwrap_or(""));
+        let hash = format!("{:x}", md5::compute(payload.as_bytes()));
+
         conn.execute(
-            "INSERT INTO audit_log (username, action, target, details) VALUES (?1, ?2, ?3, ?4)",
-            params![username, action, target, details],
+            "INSERT INTO audit_log (username, action, target, details, created_at, hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![username, action, target, details, timestamp, hash],
         ).ok();
     }
 
     pub fn get_audit_log(&self, limit: i64, offset: i64, username: Option<&str>, action: Option<&str>) -> Vec<AuditEntry> {
         let conn = self.conn.lock().unwrap();
-        let mut sql = "SELECT id, username, action, target, details, created_at FROM audit_log WHERE 1=1".to_string();
+        let mut sql = "SELECT id, username, action, target, details, created_at, hash FROM audit_log WHERE 1=1".to_string();
         let mut param_values: Vec<String> = vec![];
         if let Some(u) = username {
             if !u.is_empty() { sql.push_str(&format!(" AND username = ?{}", param_values.len() + 1)); param_values.push(u.to_string()); }
@@ -734,6 +767,7 @@ impl Database {
             Ok(AuditEntry {
                 id: row.get(0)?, username: row.get(1)?, action: row.get(2)?,
                 target: row.get(3)?, details: row.get(4)?, created_at: row.get(5)?,
+                hash: row.get::<_, Option<String>>(6).ok().flatten(),
             })
         }).unwrap().filter_map(|r| r.ok()).collect()
     }

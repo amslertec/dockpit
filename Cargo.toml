@@ -47,5 +47,6 @@ rustls-pemfile = "2"
 totp-rs = { version = "5", features = ["qr", "gen_secret"] }
 base32 = "0.5"
 serde_yaml = "0.9"
+md5 = "0.7"
 base64 = "0.22"
 dirs-next = "2"

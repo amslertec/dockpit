@@ -292,7 +292,21 @@ pub async fn login(
                     _ => return Ok(Json(ApiResponse::err("2FA-Code erforderlich"))),
                 };
                 if !auth::verify_totp(&secret, code) {
-                    return Ok(Json(ApiResponse::err("Ungültiger 2FA-Code")));
+                    // Try backup codes
+                    let mut used_backup = false;
+                    if let Some(codes_json) = state.db.get_backup_codes(&username) {
+                        if let Ok(mut codes) = serde_json::from_str::<Vec<String>>(&codes_json) {
+                            if let Some(pos) = codes.iter().position(|c| c == code) {
+                                codes.remove(pos);
+                                let updated = serde_json::to_string(&codes).unwrap_or_default();
+                                state.db.set_backup_codes(&username, Some(&updated)).ok();
+                                used_backup = true;
+                            }
+                        }
+                    }
+                    if !used_backup {
+                        return Ok(Json(ApiResponse::err("Ungültiger 2FA-Code")));
+                    }
                 }
             }
             let role = state.db.get_user_role(&username).unwrap_or_else(|| "admin".to_string());
@@ -314,6 +328,25 @@ pub async fn login(
             state.db.log_audit(&req.username, "login_failed", None, Some("Invalid credentials"));
             Ok(Json(ApiResponse::err("Ungültige Anmeldedaten")))
         }
+    }
+}
+
+pub async fn refresh_token(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<ApiResponse<LoginResponse>> {
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    // Verify user still exists and get current role
+    let role = match state.db.get_user_role(&claims.username) {
+        Some(r) => r,
+        None => return Json(ApiResponse::err("Benutzer nicht gefunden")),
+    };
+    match auth::create_token(&claims.sub, &claims.username, &role) {
+        Ok(token) => Json(ApiResponse::ok(LoginResponse { token, username: claims.username })),
+        Err(_) => Json(ApiResponse::err("Token-Erneuerung fehlgeschlagen")),
     }
 }
 
@@ -393,6 +426,7 @@ pub async fn totp_setup(
         secret,
         qr_code: qr_base64,
         otpauth_url,
+        backup_codes: None,
     }))
 }
 
@@ -412,7 +446,10 @@ pub async fn totp_verify(
     };
 
     if auth::verify_totp(&secret, &req.code) {
-        Json(ApiResponse::ok("2FA erfolgreich aktiviert".to_string()))
+        let codes = auth::generate_backup_codes();
+        let codes_json = serde_json::to_string(&codes).unwrap_or_default();
+        state.db.set_backup_codes(&claims.username, Some(&codes_json)).ok();
+        Json(ApiResponse::ok(serde_json::to_string(&codes).unwrap_or_else(|_| "2FA aktiviert".to_string())))
     } else {
         // Wrong code - remove the secret again
         state.db.set_totp_secret(&claims.username, None).ok();
@@ -437,6 +474,7 @@ pub async fn totp_disable(
 
     if auth::verify_totp(&secret, &req.code) {
         state.db.set_totp_secret(&claims.username, None).ok();
+        state.db.set_backup_codes(&claims.username, None).ok();
         Json(ApiResponse::ok("2FA deaktiviert".to_string()))
     } else {
         Json(ApiResponse::err("Ungültiger Code"))
@@ -2823,6 +2861,47 @@ pub async fn env_get_stack(
     } else { agent_get(&env, &format!("/api/stacks/{}", name)).await }
 }
 
+fn validate_compose_yaml(content: &str) -> Result<(), String> {
+    // Reject YAML anchors/aliases (potential billion laughs attack)
+    if content.contains("<<:") || content.contains("*") && content.contains("&") {
+        // More precise check: look for YAML anchor definitions
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("&") && !trimmed.starts_with('#') {
+                // Check if it looks like a YAML anchor (not a shell command)
+                let before_amp = trimmed.split('&').next().unwrap_or("");
+                if before_amp.trim().ends_with(':') || before_amp.trim().is_empty() || trimmed.starts_with("- &") {
+                    return Err("YAML anchors/aliases are not allowed".to_string());
+                }
+            }
+        }
+    }
+
+    // Parse YAML
+    let doc: serde_yaml::Value = serde_yaml::from_str(content)
+        .map_err(|e| format!("Invalid YAML: {}", e))?;
+
+    // Must be a mapping at top level
+    let map = doc.as_mapping().ok_or("YAML must be a mapping at top level")?;
+
+    // Whitelist top-level keys
+    let allowed_keys = ["services", "volumes", "networks", "configs", "secrets", "version", "name", "x-"];
+    for key in map.keys() {
+        if let Some(k) = key.as_str() {
+            if !allowed_keys.iter().any(|a| k == *a || k.starts_with("x-")) {
+                return Err(format!("Unknown top-level key: '{}'. Allowed: services, volumes, networks, configs, secrets, name", k));
+            }
+        }
+    }
+
+    // Must have 'services' key
+    if !map.contains_key(&serde_yaml::Value::String("services".to_string())) {
+        return Err("Missing required 'services' key".to_string());
+    }
+
+    Ok(())
+}
+
 pub async fn env_create_stack(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -2830,6 +2909,10 @@ pub async fn env_create_stack(
     Json(req): Json<CreateStackRequest>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    // Validate compose YAML
+    if let Err(e) = validate_compose_yaml(&req.compose_content) {
+        return Json(ApiResponse::err(e));
+    }
     state.db.log_audit(&audit_user(&headers), "stack_create", Some(&req.name), Some(&format!("Server: {}", env_name(&state, &env_id))));
     if env.is_local {
         match state.stacks.create_stack(&req) { Ok(_) => Json(ApiResponse::ok(format!("Stack '{}' erstellt", req.name))), Err(e) => Json(ApiResponse::err(e)) }
@@ -2842,6 +2925,9 @@ pub async fn env_update_stack(
     Json(req): Json<UpdateStackRequest>,
 ) -> Json<ApiResponse<String>> {
     let env = env_or_err!(&state, &env_id);
+    if let Err(e) = validate_compose_yaml(&req.compose_content) {
+        return Json(ApiResponse::err(e));
+    }
     if env.is_local {
         match state.stacks.update_stack(&name, &req) { Ok(_) => Json(ApiResponse::ok("Aktualisiert".into())), Err(e) => Json(ApiResponse::err(e)) }
     } else { agent_put(&env, &format!("/api/stacks/{}", name), &req).await }

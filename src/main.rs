@@ -26,7 +26,6 @@ struct FrontendAssets;
 fn serve_file(path: &str) -> Option<Response> {
     FrontendAssets::get(path).map(|file| {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
-        // Hashed assets (JS/CSS with content hash in filename) are immutable
         let cache_control = if path.contains("/_app/") || path.contains("/immutable/") {
             "public, max-age=31536000, immutable"
         } else if path.ends_with(".svg") || path.ends_with(".png") || path.ends_with(".ico") || path.ends_with(".woff2") {
@@ -36,15 +35,22 @@ fn serve_file(path: &str) -> Option<Response> {
         } else {
             "public, max-age=3600"
         };
-        (
+        let mut resp = (
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, mime.as_ref().to_string()),
                 (header::CACHE_CONTROL, cache_control.to_string()),
             ],
             file.data.to_vec(),
-        )
-            .into_response()
+        ).into_response();
+        if path.ends_with(".html") || path.is_empty() {
+            let hdrs = resp.headers_mut();
+            hdrs.insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+            hdrs.insert("X-Frame-Options", "SAMEORIGIN".parse().unwrap());
+            hdrs.insert("Referrer-Policy", "strict-origin-when-cross-origin".parse().unwrap());
+            hdrs.insert("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; frame-src 'self'".parse().unwrap());
+        }
+        resp
     })
 }
 
@@ -74,7 +80,15 @@ async fn serve_frontend(uri: Uri) -> Response {
 
     // Final fallback to index.html
     match FrontendAssets::get("index.html") {
-        Some(file) => Html(String::from_utf8_lossy(&file.data).to_string()).into_response(),
+        Some(file) => {
+            let mut resp = Html(String::from_utf8_lossy(&file.data).to_string()).into_response();
+            let hdrs = resp.headers_mut();
+            hdrs.insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+            hdrs.insert("X-Frame-Options", "SAMEORIGIN".parse().unwrap());
+            hdrs.insert("Referrer-Policy", "strict-origin-when-cross-origin".parse().unwrap());
+            hdrs.insert("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self'; frame-src 'self'".parse().unwrap());
+            resp
+        },
         None => (StatusCode::NOT_FOUND, "Frontend not found").into_response(),
     }
 }
@@ -214,6 +228,7 @@ async fn main() {
         .route("/api/updates/report", get(handlers::get_update_report))
         .route("/api/updates/status", get(handlers::get_update_check_status))
         .route("/api/ws-token", post(handlers::create_ws_token))
+        .route("/api/refresh", post(handlers::refresh_token))
         .route("/api/dashboard-config", get(handlers::get_dashboard_config))
         .route("/api/dashboard-config", put(handlers::save_dashboard_config))
         .layer(middleware::from_fn(auth::auth_middleware));

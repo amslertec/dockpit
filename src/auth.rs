@@ -26,7 +26,7 @@ fn get_secret() -> String {
 
 pub fn create_token(user_id: &str, username: &str, role: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::days(7))
+        .checked_add_signed(chrono::Duration::hours(2))
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -188,6 +188,15 @@ pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
     };
 
     totp.check_current(code).unwrap_or(false)
+}
+
+pub fn generate_backup_codes() -> Vec<String> {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..8).map(|_| {
+        let code: u32 = rng.gen_range(10000000..99999999);
+        format!("{}", code)
+    }).collect()
 }
 
 pub fn generate_agent_token() -> String {
