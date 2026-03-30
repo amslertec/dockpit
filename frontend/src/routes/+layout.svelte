@@ -92,36 +92,35 @@
 		const hasToken = $auth.token || localStorage.getItem('dp_token');
 		const currentPath = $page.url.pathname;
 
-		// 1. Check API status (with retry for slow startup)
-		let status = await api.get<AppStatus>('/status');
-		if (!status.success) {
-			await new Promise(r => setTimeout(r, 1500));
+		// 1. Check API status — retry until backend is ready (handles slow Docker startup)
+		let status: Awaited<ReturnType<typeof api.get<AppStatus>>> | null = null;
+		for (let attempt = 0; attempt < 20; attempt++) {
 			status = await api.get<AppStatus>('/status');
+			if (status.success) break;
+			await new Promise(r => setTimeout(r, 1000));
 		}
 
-		// 2. Route decision
-		if (status.success) {
+		// 2. Route decision based on setup state
+		if (status?.success) {
 			const done = status.data?.setup_complete;
 			if (!done) {
-				// Setup not complete → go to setup
+				// Setup not complete → must go to setup
 				if (currentPath !== '/setup') goto('/setup');
 				ready = true;
 				return;
 			}
 			if (!hasToken && !isPublic) {
-				// No token → go to login
 				goto('/login');
 				ready = true;
 				return;
 			}
 		} else {
-			// API unreachable
-			if (!hasToken && !isPublic) {
+			// API still unreachable after retries — redirect based on token
+			if (!hasToken) {
 				goto('/login');
 				ready = true;
 				return;
 			}
-			// Has token but API failed — continue anyway, pages will handle errors
 		}
 
 		// 3. If on /login or /setup with a valid token, redirect to the app
@@ -131,7 +130,7 @@
 			return;
 		}
 
-		// 4. Load environments, then show the current page (don't redirect!)
+		// 4. Load environments, then show the current page
 		await loadEnvironments();
 		ready = true;
 	});
