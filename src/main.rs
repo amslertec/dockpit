@@ -253,6 +253,7 @@ async fn main() {
         .route("/api/env/{env_id}/containers/{container_id}/check-update", post(handlers::env_check_container_update))
         .route("/api/env/{env_id}/containers/{container_id}/recreate", post(handlers::env_recreate_container))
         .route("/api/env/{env_id}/containers/{container_id}/migrate", post(handlers::env_migrate_container))
+        .route("/api/env/{env_id}/stacks/{name}/migrate", post(handlers::env_migrate_stack))
         .route("/api/env/{env_id}/images/pull", post(handlers::env_pull_image))
         .route("/api/env/{env_id}/images/prune", post(handlers::env_prune_images))
         .route("/api/env/{env_id}/images/{image_id}", delete(handlers::env_remove_image))

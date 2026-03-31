@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
-	import { selectedEnv } from '$lib/stores/environment';
+	import { selectedEnv, environments } from '$lib/stores/environment';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -78,6 +78,25 @@
 			})
 	);
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
+
+	// Stack migration
+	let migrateStack = $state<string | null>(null);
+	let migrateTarget = $state('');
+	let migrateStopSource = $state(true);
+	let migrateDeploy = $state(true);
+	let migrating = $state(false);
+	const migrateTargets = $derived($environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name })));
+
+	async function doMigrateStack() {
+		if (!migrateStack || !migrateTarget) return;
+		migrating = true;
+		const r = await api.post<string>(`/env/${$selectedEnv}/stacks/${migrateStack}/migrate`, {
+			target_env_id: migrateTarget, stop_source: migrateStopSource, deploy: migrateDeploy,
+		});
+		migrating = false;
+		if (r.success) { toasts.success(r.data || $t('stacks.migrated')); migrateStack = null; migrateTarget = ''; load(); }
+		else toasts.error(r.error || $t('common.error'));
+	}
 
 	// Stats
 	const runningCount = $derived(stacks.filter(s => s.status === 'running').length);
@@ -300,6 +319,10 @@
 									{/if}
 									<a href="/stacks/{s.name}" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition no-underline" title={$t('common.edit')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
+									{#if $canManageDocker}
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" onclick={() => migrateStack = s.name} title={$t('stacks.migrate')}>
+										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+									{/if}
 									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" onclick={() => remove(s.name)} title={$t('common.delete')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
 								</div>
@@ -477,6 +500,43 @@
 		<div class="flex justify-end gap-2 mt-4">
 			<Button variant="secondary" size="sm" onclick={() => showSaveTemplate = false}>{$t('common.cancel')}</Button>
 			<Button variant="primary" size="sm" onclick={saveAsTemplate}>{$t('common.save')}</Button>
+		</div>
+	</Modal>
+{/if}
+
+{#if migrateStack}
+	<Modal title={$t('stacks.migrateTitle')} onclose={() => migrateStack = null}>
+		<div class="space-y-4">
+			<div>
+				<p class="text-sm text-secondary mb-1">Stack:</p>
+				<p class="text-sm font-medium text-primary">{migrateStack}</p>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-secondary mb-1">{$t('stacks.migrateTarget')}</label>
+				<div class="relative">
+					<select bind:value={migrateTarget} class="w-full h-9 px-3 pr-8 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)] appearance-none cursor-pointer">
+						<option value="">{$t('containers.selectTarget')}</option>
+						{#each migrateTargets as t}
+							<option value={t.value}>{t.label}</option>
+						{/each}
+					</select>
+					<svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+				</div>
+			</div>
+			<div class="space-y-2">
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="checkbox" bind:checked={migrateDeploy} class="accent-[var(--accent)]" />
+					<span class="text-sm text-secondary">{$t('stacks.migrateDeploy')}</span>
+				</label>
+				<label class="flex items-center gap-2 cursor-pointer">
+					<input type="checkbox" bind:checked={migrateStopSource} class="accent-[var(--accent)]" />
+					<span class="text-sm text-secondary">{$t('stacks.migrateStopSource')}</span>
+				</label>
+			</div>
+		</div>
+		<div class="flex justify-end gap-2 mt-5">
+			<Button variant="secondary" size="sm" onclick={() => migrateStack = null}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={doMigrateStack} loading={migrating} disabled={!migrateTarget}>{$t('stacks.migrateStart')}</Button>
 		</div>
 	</Modal>
 {/if}
