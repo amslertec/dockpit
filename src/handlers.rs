@@ -2185,27 +2185,61 @@ pub async fn create_environment(
 
 pub async fn discover_agents(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Json<ApiResponse<Vec<serde_json::Value>>> {
     let mut results = Vec::new();
     let existing_urls: Vec<String> = state.db.get_environments().iter().map(|e| e.url.clone()).collect();
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(800))
+        .timeout(Duration::from_millis(300))
         .build()
         .unwrap();
 
     let mut subnets_to_scan: Vec<String> = Vec::new();
 
     // With network_mode: host, hostname -I returns the real host IPs
+    // Detect all non-Docker subnets and scan the full /16 range for 10.x networks
+    let mut base_prefixes: Vec<String> = Vec::new();
     if let Ok(output) = tokio::process::Command::new("hostname").arg("-I").output().await {
         let ips = String::from_utf8_lossy(&output.stdout);
         for ip in ips.split_whitespace() {
             let parts: Vec<&str> = ip.split('.').collect();
-            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.starts_with("169.254.") {
-                let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
-                if !subnets_to_scan.contains(&subnet) {
-                    subnets_to_scan.push(subnet);
+            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.starts_with("169.254.") && !ip.contains(':') {
+                let a = parts[0]; let b = parts[1]; let c = parts[2];
+                // For 10.x.x.x networks: scan the /16 (all /24 subnets in 10.x.0-255)
+                if a == "10" {
+                    let prefix = format!("{}.{}", a, b);
+                    if !base_prefixes.contains(&prefix) {
+                        base_prefixes.push(prefix.clone());
+                        for third in 0..=255u16 {
+                            let subnet = format!("{}.{}", prefix, third);
+                            subnets_to_scan.push(subnet);
+                        }
+                    }
+                } else {
+                    // For 192.168.x.x: scan only the /24
+                    let subnet = format!("{}.{}.{}", a, b, c);
+                    if !subnets_to_scan.contains(&subnet) {
+                        subnets_to_scan.push(subnet);
+                    }
                 }
+            }
+        }
+    }
+
+    // Extra subnet from query param (e.g. "10.10.20" or "10.10.20.0/24")
+    if let Some(extra) = query.get("extra_subnet") {
+        let s = extra.trim();
+        if !s.is_empty() {
+            let prefix = s.split('/').next().unwrap_or(s);
+            let parts: Vec<&str> = prefix.split('.').collect();
+            let subnet = if parts.len() == 4 {
+                format!("{}.{}.{}", parts[0], parts[1], parts[2])
+            } else if parts.len() == 3 {
+                s.to_string()
+            } else { String::new() };
+            if !subnet.is_empty() && !subnets_to_scan.contains(&subnet) {
+                subnets_to_scan.push(subnet);
             }
         }
     }

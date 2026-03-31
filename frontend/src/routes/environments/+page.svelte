@@ -124,7 +124,8 @@
 	async function discoverAgents() {
 		discovering = true;
 		discoveredAgents = [];
-		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>('/agents/discover', {});
+		const params = scanSubnet.trim() ? `?extra_subnet=${encodeURIComponent(scanSubnet.trim())}` : '';
+		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>(`/agents/discover${params}`, {});
 		discovering = false;
 		if (r.success && r.data) {
 			discoveredAgents = r.data.filter(a => !a.paired);
@@ -134,13 +135,19 @@
 		}
 	}
 
-	async function connectDiscovered(agent: {hostname: string; url: string}) {
+	// Connect discovered agent
+	let connectAgent = $state<{hostname: string; url: string} | null>(null);
+	let connectAgentName = $state('');
+
+	async function doConnectAgent() {
+		if (!connectAgent) return;
 		connecting = true; connectError = '';
-		const r = await api.post<EnvironmentInfo>('/environments', { name: agent.hostname, url: agent.url });
+		const r = await api.post<EnvironmentInfo>('/environments', { name: connectAgentName || connectAgent.hostname, url: connectAgent.url });
 		connecting = false;
 		if (r.success) {
 			toasts.success($t('env.connected', { name: r.data!.name }));
-			discoveredAgents = discoveredAgents.filter(a => a.url !== agent.url);
+			discoveredAgents = discoveredAgents.filter(a => a.url !== connectAgent!.url);
+			connectAgent = null; connectAgentName = '';
 			activeTab = 0; loadAll();
 		} else connectError = r.error || $t('common.error');
 	}
@@ -282,11 +289,22 @@
 						<span class="text-xs font-medium text-primary">{$t('env.autoDiscovery')}</span>
 					</div>
 					<p class="text-xs text-secondary mb-3 ml-7">{$t('env.autoDiscoveryDesc')}</p>
-					<div class="ml-7">
+					<div class="ml-7 flex items-end gap-3 flex-wrap">
 						<Button variant="primary" size="md" onclick={discoverAgents} loading={discovering}>
 							<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
 							{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
 						</Button>
+						<div class="flex items-end gap-2">
+							<div>
+								<label class="block text-[10px] text-muted mb-1">{$t('env.extraSubnet')}</label>
+								<input
+									type="text"
+									bind:value={scanSubnet}
+									placeholder="10.10.20"
+									class="w-[130px] h-9 px-3 text-xs rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+								/>
+							</div>
+						</div>
 					</div>
 
 					{#if discoveredAgents.length > 0}
@@ -297,7 +315,7 @@
 										<div class="text-sm font-medium text-primary">{agent.hostname}</div>
 										<div class="text-[11px] text-muted">{agent.url} — Docker {agent.docker_version}</div>
 									</div>
-									<Button variant="primary" size="sm" onclick={() => connectDiscovered(agent)} loading={connecting}>
+									<Button variant="primary" size="sm" onclick={() => { connectAgent = agent; connectAgentName = agent.hostname; }}>
 										{$t('env.connectAgent')}
 									</Button>
 								</div>
@@ -552,6 +570,24 @@
 				<Button variant="primary" size="sm" type="submit" loading={creatingJob}>{creatingJob ? $t('common.loading') : $t('common.create')}</Button>
 			</div>
 		</form>
+	</Modal>
+{/if}
+
+{#if connectAgent}
+	<Modal title={$t('env.connectAgent')} onclose={() => { connectAgent = null; connectError = ''; }}>
+		<div class="space-y-4">
+			<div>
+				<p class="text-xs text-muted mb-1">{$t('env.agentAddress')}</p>
+				<p class="text-sm font-medium text-primary">{connectAgent.url}</p>
+				<p class="text-xs text-muted mt-1">Hostname: {connectAgent.hostname}</p>
+			</div>
+			<TextInput bind:value={connectAgentName} label={$t('common.name')} placeholder={connectAgent.hostname} id="can" />
+			{#if connectError}<p class="text-[var(--red)] text-xs">{connectError}</p>{/if}
+		</div>
+		<div class="flex justify-end gap-2 mt-5">
+			<Button variant="secondary" size="sm" onclick={() => { connectAgent = null; connectError = ''; }}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={doConnectAgent} loading={connecting}>{$t('env.connectServer')}</Button>
+		</div>
 	</Modal>
 {/if}
 
