@@ -84,6 +84,7 @@
 	let migrateTarget = $state('');
 	let migrateStopSource = $state(true);
 	let migrateDeploy = $state(true);
+	let migrateDropdown = $state(false);
 	let migrating = $state(false);
 	const migrateTargets = $derived($environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name })));
 
@@ -514,13 +515,40 @@
 			<div>
 				<label class="block text-xs font-medium text-secondary mb-1">{$t('stacks.migrateTarget')}</label>
 				<div class="relative">
-					<select bind:value={migrateTarget} class="w-full h-9 px-3 pr-8 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)] appearance-none cursor-pointer">
-						<option value="">{$t('containers.selectTarget')}</option>
-						{#each migrateTargets as t}
-							<option value={t.value}>{t.label}</option>
-						{/each}
-					</select>
-					<svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+					<button
+						class="w-full flex items-center gap-2 h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] hover:border-[var(--border-light)] transition-all cursor-pointer"
+						onclick={(e) => { e.stopPropagation(); migrateDropdown = !migrateDropdown; }}
+					>
+						{#if migrateTarget}
+							{@const env = $environments.find(e => e.id === migrateTarget)}
+							<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
+							<span class="truncate font-medium">{env?.name}</span>
+						{:else}
+							<span class="text-muted">{$t('containers.selectTarget')}</span>
+						{/if}
+						<svg class="w-3.5 h-3.5 text-muted shrink-0 ml-auto transition-transform {migrateDropdown ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
+					{#if migrateDropdown}
+						<div class="absolute left-0 right-0 mt-1 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 py-1.5 overflow-hidden">
+							{#each migrateTargets as t}
+								{@const env = $environments.find(e => e.id === t.value)}
+								<button
+									class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
+									{t.value === migrateTarget ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
+									onclick={() => { migrateTarget = t.value; migrateDropdown = false; }}
+								>
+									<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
+									<span class="truncate font-medium">{t.label}</span>
+									{#if env?.is_local}
+										<span class="text-[9px] text-muted ml-auto px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">Local</span>
+									{/if}
+									{#if t.value === migrateTarget}
+										<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 			<div class="space-y-2">
