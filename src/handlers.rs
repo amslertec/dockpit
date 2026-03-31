@@ -2196,23 +2196,22 @@ pub async fn discover_agents(
 
     let mut subnets_to_scan: Vec<String> = Vec::new();
 
-    // Get host's real LAN subnets via Docker (runs temp container with host networking)
-    let docker_subnets = state.docker.get_host_subnets().await;
-    subnets_to_scan.extend(docker_subnets);
-
-    // Fallback: env var or common subnets
-    if subnets_to_scan.is_empty() {
-        if let Ok(subnet) = std::env::var("DOCKPIT_SCAN_SUBNET") {
-            let parts: Vec<&str> = subnet.trim().split('.').collect();
-            if parts.len() >= 3 {
-                subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
+    // With network_mode: host, hostname -I returns the real host IPs
+    if let Ok(output) = tokio::process::Command::new("hostname").arg("-I").output().await {
+        let ips = String::from_utf8_lossy(&output.stdout);
+        for ip in ips.split_whitespace() {
+            let parts: Vec<&str> = ip.split('.').collect();
+            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+                if !subnets_to_scan.contains(&subnet) {
+                    subnets_to_scan.push(subnet);
+                }
             }
         }
     }
+
     if subnets_to_scan.is_empty() {
         subnets_to_scan.push("192.168.1".to_string());
-        subnets_to_scan.push("192.168.0".to_string());
-        subnets_to_scan.push("10.0.0".to_string());
     }
 
     subnets_to_scan.sort();
