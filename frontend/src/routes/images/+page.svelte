@@ -359,7 +359,7 @@
 				<p class="text-[10px] text-[var(--text-muted)] mt-1.5">Docker Hub search — type to find images</p>
 			</div>
 			<div class="flex justify-end gap-2">
-				<Button variant="secondary" size="sm" type="button" onclick={() => { showPull = false; showSuggestions = false; }}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" type="button" onclick={() => { showPull = false; showSuggestions = false; }}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit">{$t('images.pull')}</Button>
 			</div>
 		</form>

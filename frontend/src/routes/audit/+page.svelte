@@ -35,6 +35,7 @@
 		{ value: 'update_check', label: $t('audit.updateCheck') },
 		{ value: 'job_create', label: $t('audit.jobCreate') },
 		{ value: 'job_delete', label: $t('audit.jobDelete') },
+		{ value: 'container_migrate', label: $t('audit.containerMigrate') },
 	]);
 
 	onMount(() => {
@@ -77,13 +78,27 @@
 	}
 
 	function badgeClass(action: string): string {
-		if (action === 'login') return 'bg-[var(--green-bg)] text-[var(--green)]';
-		if (action === 'login_failed') return 'bg-[var(--red-bg)] text-[var(--red)]';
-		if (action.endsWith('_create') || action.endsWith('_deploy')) return 'bg-[var(--accent-bg)] text-[var(--accent)]';
-		if (action.endsWith('_delete') || action.endsWith('_stop')) return 'bg-[var(--red-bg)] text-[var(--red)]';
-		if (action.endsWith('_update') || action === 'settings_update') return 'bg-[var(--yellow-bg)] text-[var(--yellow)]';
-		if (action === 'vuln_scan' || action === 'update_check') return 'bg-[#f3e8ff] text-[#9333ea] dark:bg-[#9333ea20] dark:text-[#c084fc]';
-		return 'bg-[var(--bg-hover)] text-[var(--text-secondary)]';
+		const map: Record<string, string> = {
+			login: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			login_failed: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			container_action: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
+			container_recreate: 'bg-[var(--purple)]/15 text-[var(--purple)] border border-[var(--purple)]/25',
+			container_migrate: 'bg-cyan-400/15 text-cyan-400 border border-cyan-400/25',
+			stack_deploy: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			stack_stop: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			stack_create: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
+			stack_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			user_create: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			user_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			settings_update: 'bg-[var(--yellow)]/15 text-[var(--yellow)] border border-[var(--yellow)]/25',
+			env_create: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
+			env_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			vuln_scan: 'bg-[var(--purple)]/15 text-[var(--purple)] border border-[var(--purple)]/25',
+			update_check: 'bg-[var(--yellow)]/15 text-[var(--yellow)] border border-[var(--yellow)]/25',
+			job_create: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
+			job_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+		};
+		return map[action] || 'bg-[var(--bg-hover)] text-[var(--text-secondary)] border border-[var(--border)]';
 	}
 
 	function actionLabel(action: string): string {
@@ -105,6 +120,7 @@
 			update_check: 'audit.updateCheck',
 			job_create: 'audit.jobCreate',
 			job_delete: 'audit.jobDelete',
+			container_migrate: 'audit.containerMigrate',
 		};
 		const key = keyMap[action];
 		if (key) {
