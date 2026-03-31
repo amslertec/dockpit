@@ -563,17 +563,17 @@
 			</div>
 			<div>
 				<label class="block text-xs font-medium text-secondary mb-1">{$t('containers.migrateTarget')}</label>
-				<select bind:value={migrateTarget} class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]">
-					<option value="">{$t('containers.selectTarget')}</option>
-					{#each migrateTargets as t}
-						<option value={t.value}>{t.label}</option>
-					{/each}
-				</select>
+				<div class="relative">
+					<select bind:value={migrateTarget} class="w-full h-9 px-3 pr-8 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)] appearance-none cursor-pointer">
+						<option value="">{$t('containers.selectTarget')}</option>
+						{#each migrateTargets as t}
+							<option value={t.value}>{t.label}</option>
+						{/each}
+					</select>
+					<svg class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+				</div>
 			</div>
-			<label class="flex items-center gap-2 cursor-pointer">
-				<input type="checkbox" bind:checked={migrateStopSource} class="rounded" />
-				<span class="text-sm text-secondary">{$t('containers.migrateStopSource')}</span>
-			</label>
+			<CustomCheckbox checked={migrateStopSource} onchange={(v) => migrateStopSource = v} label={$t('containers.migrateStopSource')} />
 		</div>
 		{#snippet footer()}
 			<Button variant="secondary" size="sm" onclick={() => migrateModal = null}>{$t('common.cancel')}</Button>
