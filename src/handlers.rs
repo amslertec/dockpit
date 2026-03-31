@@ -2185,7 +2185,6 @@ pub async fn create_environment(
 
 pub async fn discover_agents(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Json<ApiResponse<Vec<serde_json::Value>>> {
     let mut results = Vec::new();
     let existing_urls: Vec<String> = state.db.get_environments().iter().map(|e| e.url.clone()).collect();
@@ -2197,71 +2196,91 @@ pub async fn discover_agents(
 
     let mut subnets_to_scan: Vec<String> = Vec::new();
 
-    // Use user-provided subnet if given (e.g. "192.168.1")
-    if let Some(subnet) = query.get("subnet") {
-        let s = subnet.trim();
-        if !s.is_empty() {
-            // Support full CIDR notation "192.168.1.0/24" or just "192.168.1"
-            let prefix = s.split('/').next().unwrap_or(s);
-            // Strip last octet if 4 parts given
-            let parts: Vec<&str> = prefix.split('.').collect();
-            if parts.len() == 4 {
-                subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
-            } else if parts.len() == 3 {
-                subnets_to_scan.push(s.to_string());
-            }
+    // Method 1: DOCKPIT_SCAN_SUBNET env var (explicit config)
+    if let Ok(subnet) = std::env::var("DOCKPIT_SCAN_SUBNET") {
+        let parts: Vec<&str> = subnet.trim().split('.').collect();
+        if parts.len() >= 3 {
+            subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
         }
     }
 
-    // Auto-detect: get host gateway via default route (works inside Docker)
+    // Method 2: Resolve host.docker.internal (works with --add-host or Docker Desktop)
     if subnets_to_scan.is_empty() {
-        let output = tokio::process::Command::new("ip")
-            .args(["route", "show", "default"])
-            .output()
-            .await;
-        if let Ok(out) = output {
-            let route = String::from_utf8_lossy(&out.stdout);
-            // Parse "default via 192.168.1.1 dev eth0" → subnet "192.168.1"
-            for word in route.split_whitespace() {
-                if word.contains('.') && word != "default" {
-                    let parts: Vec<&str> = word.split('.').collect();
-                    if parts.len() == 4 {
-                        subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: hostname -I
-    if subnets_to_scan.is_empty() {
-        let output = tokio::process::Command::new("hostname")
-            .arg("-I")
-            .output()
-            .await;
-        if let Ok(out) = output {
-            let ips = String::from_utf8_lossy(&out.stdout);
-            for ip in ips.split_whitespace() {
+        if let Ok(output) = tokio::process::Command::new("getent").args(["hosts", "host.docker.internal"]).output().await {
+            let out = String::from_utf8_lossy(&output.stdout);
+            if let Some(ip) = out.split_whitespace().next() {
                 let parts: Vec<&str> = ip.split('.').collect();
-                if parts.len() == 4 {
-                    let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
-                    // Skip Docker internal subnets
-                    if !subnet.starts_with("172.") {
-                        subnets_to_scan.push(subnet);
+                if parts.len() == 4 && !ip.starts_with("172.") {
+                    subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
+                }
+            }
+        }
+    }
+
+    // Method 3: Read /proc/net/fib_trie for host IPs (works in Docker containers)
+    if subnets_to_scan.is_empty() {
+        if let Ok(content) = tokio::fs::read_to_string("/proc/net/fib_trie").await {
+            let mut prev_line = String::new();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                // Look for /32 host local addresses
+                if trimmed.starts_with("|-- ") && prev_line.contains("/32 host LOCAL") {
+                    // This was the previous pattern; use the simpler approach below
+                }
+                // Actually parse the IPs directly after "LOCAL" markers
+                if prev_line.trim().ends_with("LOCAL") || prev_line.trim().contains("/32 host LOCAL") {
+                    if let Some(ip_str) = trimmed.strip_prefix("|-- ") {
+                        let parts: Vec<&str> = ip_str.split('.').collect();
+                        if parts.len() == 4 && ip_str != "127.0.0.1" && !ip_str.starts_with("172.") && !ip_str.starts_with("169.254.") {
+                            let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+                            if !subnets_to_scan.contains(&subnet) {
+                                subnets_to_scan.push(subnet);
+                            }
+                        }
+                    }
+                }
+                prev_line = trimmed.to_string();
+            }
+        }
+    }
+
+    // Method 4: Parse all network interfaces from /proc/net/route
+    if subnets_to_scan.is_empty() {
+        if let Ok(content) = tokio::fs::read_to_string("/proc/net/route").await {
+            for line in content.lines().skip(1) {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if fields.len() >= 8 {
+                    let iface = fields[0];
+                    let gateway = fields[2];
+                    // Find non-zero gateways on non-docker interfaces
+                    if gateway != "00000000" && !iface.starts_with("docker") && !iface.starts_with("br-") && !iface.starts_with("veth") {
+                        // Gateway is in hex (little-endian): e.g. "0101A8C0" = 192.168.1.1
+                        if let Ok(gw) = u32::from_str_radix(gateway, 16) {
+                            let a = (gw & 0xFF) as u8;
+                            let b = ((gw >> 8) & 0xFF) as u8;
+                            let c = ((gw >> 16) & 0xFF) as u8;
+                            let subnet = format!("{}.{}.{}", a, b, c);
+                            if !subnet.starts_with("172.") && !subnets_to_scan.contains(&subnet) {
+                                subnets_to_scan.push(subnet);
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
+    // Method 5: Fallback to common private subnets
     if subnets_to_scan.is_empty() {
         subnets_to_scan.push("192.168.1".to_string());
+        subnets_to_scan.push("192.168.0".to_string());
+        subnets_to_scan.push("10.0.0".to_string());
     }
 
-    // Deduplicate
     subnets_to_scan.sort();
     subnets_to_scan.dedup();
+
+    tracing::info!("Scanning subnets for agents: {:?}", subnets_to_scan);
 
     // Scan each subnet in parallel
     let mut handles = Vec::new();

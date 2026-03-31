@@ -124,8 +124,7 @@
 	async function discoverAgents() {
 		discovering = true;
 		discoveredAgents = [];
-		const params = scanSubnet ? `?subnet=${encodeURIComponent(scanSubnet)}` : '';
-		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>(`/agents/discover${params}`, {});
+		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>('/agents/discover', {});
 		discovering = false;
 		if (r.success && r.data) {
 			discoveredAgents = r.data.filter(a => !a.paired);
@@ -283,17 +282,8 @@
 						<span class="text-xs font-medium text-primary">{$t('env.autoDiscovery')}</span>
 					</div>
 					<p class="text-xs text-secondary mb-3 ml-7">{$t('env.autoDiscoveryDesc')}</p>
-					<div class="flex items-end gap-3 flex-wrap ml-7">
-						<div class="flex-1 min-w-[180px] max-w-[250px]">
-							<label class="block text-xs font-medium text-secondary mb-1">{$t('env.subnet')}</label>
-							<input
-								type="text"
-								bind:value={scanSubnet}
-								placeholder="192.168.1"
-								class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
-							/>
-						</div>
-						<Button variant="primary" size="md" onclick={discoverAgents} loading={discovering} disabled={!scanSubnet.trim()}>
+					<div class="ml-7">
+						<Button variant="primary" size="md" onclick={discoverAgents} loading={discovering}>
 							<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
 							{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
 						</Button>
