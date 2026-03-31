@@ -727,12 +727,16 @@
 					{#if diffData.changes.length === 0}
 						<p class="text-xs text-muted">{$t('containers.noChanges')}</p>
 					{:else}
-						<div class="space-y-1.5 max-h-[200px] overflow-y-auto">
+						<div class="space-y-1.5 max-h-[250px] overflow-y-auto">
 							{#each diffData.changes as change}
-								<div class="text-[11px] bg-[var(--bg-0)] rounded p-2">
-									<span class="font-medium text-primary">{change.field}</span>
-									{#if change.old}<span class="text-[var(--red)] line-through ml-2">{change.old}</span>{/if}
-									{#if change.new}<span class="text-[var(--green)] ml-2">{change.new}</span>{/if}
+								<div class="text-[11px] bg-[var(--bg-0)] rounded p-2.5 space-y-1">
+									<div class="font-medium text-primary text-xs">{change.field}</div>
+									{#if change.old}
+										<div class="text-[var(--red)] break-all"><span class="text-muted mr-1">-</span><span class="line-through">{change.old}</span></div>
+									{/if}
+									{#if change.new}
+										<div class="text-[var(--green)] break-all"><span class="text-muted mr-1">+</span>{change.new}</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
