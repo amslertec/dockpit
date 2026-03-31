@@ -277,6 +277,7 @@ export const en: Record<string, string> = {
 	'env.scanning': 'Scanning...',
 	'env.noAgentsFound': 'No agents found on the network',
 	'env.connectAgent': 'Connect',
+	'env.manualConnect': 'Manual Connect',
 
 	// === Users ===
 	'users.title': 'Users',

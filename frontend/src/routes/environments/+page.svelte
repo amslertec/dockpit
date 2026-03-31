@@ -276,9 +276,64 @@
 
 			<!-- Tab 1: Connect Remote Server -->
 			{:else if activeTab === 1}
+				<!-- Network Scan -->
 				<div class="mb-6">
 					<div class="flex items-center gap-2 mb-2">
 						<div class="w-5 h-5 rounded-full bg-accent-light text-accent flex items-center justify-center text-[10px] font-bold shrink-0">1</div>
+						<span class="text-xs font-medium text-primary">{$t('env.autoDiscovery')}</span>
+					</div>
+					<p class="text-xs text-secondary mb-3 ml-7">{$t('env.autoDiscoveryDesc')}</p>
+					<div class="flex items-end gap-3 flex-wrap ml-7">
+						<div class="flex-1 min-w-[180px] max-w-[250px]">
+							<label class="block text-xs font-medium text-secondary mb-1">{$t('env.subnet')}</label>
+							<input
+								type="text"
+								bind:value={scanSubnet}
+								placeholder="192.168.1"
+								class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+							/>
+						</div>
+						<Button variant="primary" size="md" onclick={discoverAgents} loading={discovering} disabled={!scanSubnet.trim()}>
+							<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+							{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
+						</Button>
+					</div>
+
+					{#if discoveredAgents.length > 0}
+						<div class="mt-3 ml-7 space-y-2">
+							{#each discoveredAgents as agent}
+								<div class="flex items-center justify-between bg-[var(--bg-0)] border border-theme rounded-lg p-3">
+									<div>
+										<div class="text-sm font-medium text-primary">{agent.hostname}</div>
+										<div class="text-[11px] text-muted">{agent.url} — Docker {agent.docker_version}</div>
+									</div>
+									<Button variant="primary" size="sm" onclick={() => connectDiscovered(agent)} loading={connecting}>
+										{$t('env.connectAgent')}
+									</Button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Manual Connect -->
+				<div class="mb-6">
+					<div class="flex items-center gap-2 mb-3">
+						<div class="w-5 h-5 rounded-full bg-accent-light text-accent flex items-center justify-center text-[10px] font-bold shrink-0">2</div>
+						<span class="text-xs font-medium text-primary">{$t('env.manualConnect')}</span>
+					</div>
+					<form onsubmit={connect} class="ml-7 max-w-md space-y-3">
+						<TextInput bind:value={addName} label={$t('env.nameOptional')} placeholder="e.g. Production Server" id="en" />
+						<TextInput bind:value={addUrl} label={$t('env.agentAddress')} placeholder="http://192.168.1.100:5522" required id="eu" />
+						{#if connectError}<p class="text-[var(--red)] text-xs">{connectError}</p>{/if}
+						<Button variant="primary" size="md" type="submit" loading={connecting}>{connecting ? $t('env.connecting') : $t('env.connectServer')}</Button>
+					</form>
+				</div>
+
+				<!-- Agent Install Instructions -->
+				<div class="pt-5 border-t border-theme">
+					<div class="flex items-center gap-2 mb-2">
+						<div class="w-5 h-5 rounded-full bg-[var(--bg-hover)] text-muted flex items-center justify-center text-[10px] font-bold shrink-0">?</div>
 						<span class="text-xs font-medium text-primary">{$t('env.step1')}</span>
 					</div>
 					<div class="space-y-2 ml-7">
@@ -309,57 +364,6 @@
 						</div>
 					</div>
 				</div>
-
-				<div>
-					<div class="flex items-center gap-2 mb-3">
-						<div class="w-5 h-5 rounded-full bg-accent-light text-accent flex items-center justify-center text-[10px] font-bold shrink-0">2</div>
-						<span class="text-xs font-medium text-primary">{$t('env.step2')}</span>
-					</div>
-					<form onsubmit={connect} class="ml-7 max-w-md space-y-3">
-						<TextInput bind:value={addName} label={$t('env.nameOptional')} placeholder="e.g. Production Server" id="en" />
-						<TextInput bind:value={addUrl} label={$t('env.agentAddress')} placeholder="http://192.168.1.100:5522" required id="eu" />
-						{#if connectError}<p class="text-[var(--red)] text-xs">{connectError}</p>{/if}
-						<Button variant="primary" size="md" type="submit" loading={connecting}>{connecting ? $t('env.connecting') : $t('env.connectServer')}</Button>
-					</form>
-				</div>
-
-				<!-- Network Discovery -->
-				<div class="mt-6 pt-5 border-t border-theme">
-					<h3 class="text-sm font-semibold text-primary mb-2">{$t('env.autoDiscovery')}</h3>
-					<p class="text-xs text-secondary mb-3">{$t('env.autoDiscoveryDesc')}</p>
-					<div class="flex items-end gap-3 flex-wrap">
-						<div class="flex-1 min-w-[180px] max-w-[250px]">
-							<label class="block text-xs font-medium text-secondary mb-1">{$t('env.subnet')}</label>
-							<input
-								type="text"
-								bind:value={scanSubnet}
-								placeholder="192.168.1"
-								class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
-							/>
-						</div>
-						<Button variant="secondary" size="md" onclick={discoverAgents} loading={discovering}>
-							<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-							{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
-						</Button>
-					</div>
-
-					{#if discoveredAgents.length > 0}
-						<div class="mt-4 space-y-2">
-							{#each discoveredAgents as agent}
-								<div class="flex items-center justify-between bg-[var(--bg-0)] border border-theme rounded-lg p-3">
-									<div>
-										<div class="text-sm font-medium text-primary">{agent.hostname}</div>
-										<div class="text-[11px] text-muted">{agent.url} — Docker {agent.docker_version}</div>
-									</div>
-									<Button variant="primary" size="sm" onclick={() => connectDiscovered(agent)} loading={connecting}>
-										{$t('env.connectAgent')}
-									</Button>
-								</div>
-							{/each}
-						</div>
-					{/if}
-				</div>
-
 			<!-- Tab 2: Docker Login -->
 			{:else if activeTab === 2}
 				<div class="mb-6">

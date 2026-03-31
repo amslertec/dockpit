@@ -261,6 +261,7 @@ export const de: Record<string, string> = {
 	'env.scanning': 'Scanne...',
 	'env.noAgentsFound': 'Keine Agents im Netzwerk gefunden',
 	'env.connectAgent': 'Verbinden',
+	'env.manualConnect': 'Manuell verbinden',
 
 	// === Users ===
 	'users.title': 'Benutzer',
