@@ -2198,30 +2198,45 @@ pub async fn discover_agents(
     let mut subnets_to_scan: Vec<String> = Vec::new();
 
     // With network_mode: host, hostname -I returns the real host IPs
-    // Detect all non-Docker subnets and scan the full /16 range for 10.x networks
+    // Detect all host subnets and scan the full /16 range for each
     let mut base_prefixes: Vec<String> = Vec::new();
+    // Known Docker bridge subnets to skip (Docker uses 172.17-31.x.x internally)
+    let docker_bridges: Vec<String> = {
+        let mut bridges = Vec::new();
+        if let Ok(output) = tokio::process::Command::new("ip").args(["addr", "show"]).output().await {
+            let out = String::from_utf8_lossy(&output.stdout);
+            let mut current_iface = String::new();
+            for line in out.lines() {
+                if !line.starts_with(' ') { current_iface = line.split(':').nth(1).unwrap_or("").trim().to_string(); }
+                if (current_iface.starts_with("docker") || current_iface.starts_with("br-") || current_iface.starts_with("veth"))
+                    && line.contains("inet ") {
+                    if let Some(ip_cidr) = line.split_whitespace().nth(1) {
+                        let ip = ip_cidr.split('/').next().unwrap_or("");
+                        let parts: Vec<&str> = ip.split('.').collect();
+                        if parts.len() == 4 {
+                            bridges.push(format!("{}.{}", parts[0], parts[1]));
+                        }
+                    }
+                }
+            }
+        }
+        bridges.sort(); bridges.dedup(); bridges
+    };
+
     if let Ok(output) = tokio::process::Command::new("hostname").arg("-I").output().await {
         let ips = String::from_utf8_lossy(&output.stdout);
         for ip in ips.split_whitespace() {
             let parts: Vec<&str> = ip.split('.').collect();
-            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.starts_with("169.254.") && !ip.contains(':') {
-                let a = parts[0]; let b = parts[1]; let c = parts[2];
-                // For 10.x.x.x networks: scan the /16 (all /24 subnets in 10.x.0-255)
-                if a == "10" {
-                    let prefix = format!("{}.{}", a, b);
-                    if !base_prefixes.contains(&prefix) {
-                        base_prefixes.push(prefix.clone());
-                        for third in 0..=255u16 {
-                            let subnet = format!("{}.{}", prefix, third);
-                            subnets_to_scan.push(subnet);
-                        }
-                    }
-                } else {
-                    // For 192.168.x.x: scan only the /24
-                    let subnet = format!("{}.{}.{}", a, b, c);
-                    if !subnets_to_scan.contains(&subnet) {
-                        subnets_to_scan.push(subnet);
-                    }
+            if parts.len() != 4 || ip.starts_with("127.") || ip.starts_with("169.254.") || ip.contains(':') { continue; }
+            let a = parts[0]; let b = parts[1];
+            let prefix = format!("{}.{}", a, b);
+            // Skip Docker bridge subnets
+            if docker_bridges.contains(&prefix) { continue; }
+            // Scan full /16 for every detected private subnet
+            if !base_prefixes.contains(&prefix) {
+                base_prefixes.push(prefix.clone());
+                for third in 0..=255u16 {
+                    subnets_to_scan.push(format!("{}.{}", prefix, third));
                 }
             }
         }
