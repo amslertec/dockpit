@@ -1419,6 +1419,20 @@ pub async fn env_migrate_container(
         .trim_start_matches('/')
         .to_string();
 
+    // Step 1.5: Propagate registry credentials to target before pull
+    if !target_env.is_local {
+        let registries = state.db.get_all_registry_credentials();
+        let login_client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap();
+        for (registry, username, password) in &registries {
+            let url = format!("{}/api/docker/login", target_env.url);
+            let body = serde_json::json!({ "registry": registry, "username": username, "password": password });
+            login_client.post(&url)
+                .header("X-Agent-Token", target_env.agent_token.as_deref().unwrap_or(""))
+                .json(&body)
+                .send().await.ok();
+        }
+    }
+
     // Step 2: Pull image on target
     let pull_body = serde_json::json!({ "image": image });
     if target_env.is_local {
@@ -1597,6 +1611,24 @@ pub async fn env_migrate_stack(
         let r: Json<ApiResponse<String>> = agent_post(&target_env, "/api/stacks", &create_body).await;
         if !r.0.success {
             return Json(ApiResponse::err(format!("Stack auf Ziel erstellen fehlgeschlagen: {}", r.0.error.unwrap_or_default())));
+        }
+    }
+
+    // Step 2.5: Propagate registry credentials to target before deploy
+    if req.deploy && !target_env.is_local {
+        let registries = state.db.get_all_registry_credentials();
+        let login_client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap();
+        for (registry, username, password) in &registries {
+            let url = format!("{}/api/docker/login", target_env.url);
+            let body = serde_json::json!({
+                "registry": registry,
+                "username": username,
+                "password": password,
+            });
+            login_client.post(&url)
+                .header("X-Agent-Token", target_env.agent_token.as_deref().unwrap_or(""))
+                .json(&body)
+                .send().await.ok();
         }
     }
 
