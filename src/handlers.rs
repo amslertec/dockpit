@@ -1497,15 +1497,29 @@ pub async fn rollback_container(
         None => return Json(ApiResponse::err("Snapshot nicht gefunden")),
     };
 
-    if !env.is_local {
-        return Json(ApiResponse::err("Rollback ist nur für lokale Container verfügbar"));
-    }
-
     state.db.log_audit(&audit_user(&headers), "container_rollback", Some(&container_name), Some(&format!("→ {}", image)));
 
-    match state.docker.rollback_container(&container_id, &config_json).await {
-        Ok(msg) => Json(ApiResponse::ok(msg)),
-        Err(e) => Json(ApiResponse::err(e)),
+    if env.is_local {
+        match state.docker.rollback_container(&container_id, &config_json).await {
+            Ok(msg) => Json(ApiResponse::ok(msg)),
+            Err(e) => Json(ApiResponse::err(e)),
+        }
+    } else {
+        // Remote: send snapshot JSON to agent's rollback endpoint
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(120)).build().unwrap();
+        let url = format!("{}/api/containers/{}/rollback", env.url, container_id);
+        match client.post(&url)
+            .header("X-Agent-Token", env.agent_token.as_deref().unwrap_or(""))
+            .header("Content-Type", "application/json")
+            .body(config_json)
+            .send().await
+        {
+            Ok(resp) => match resp.json::<ApiResponse<String>>().await {
+                Ok(d) => Json(d),
+                Err(e) => Json(ApiResponse::err(format!("Agent: {}", e))),
+            },
+            Err(e) => Json(ApiResponse::err(format!("Agent: {}", e))),
+        }
     }
 }
 

@@ -193,11 +193,34 @@
 	}
 	async function doRollback(snapshotId: number) {
 		if (!rollbackModal) return;
-		rollingBack = true;
-		const r = await api.post<string>(`/env/${$selectedEnv}/containers/${rollbackModal.id}/rollback`, { snapshot_id: snapshotId });
-		rollingBack = false;
-		if (r.success) { toasts.success(r.data || $t('containers.rollbackSuccess')); rollbackModal = null; snapshots = []; setTimeout(load, 1000); }
-		else toasts.error(r.error || $t('common.error'));
+		const cId = rollbackModal.id;
+		const cName = rollbackModal.name;
+		const snap = snapshots.find(s => s.id === snapshotId);
+		rollbackModal = null; snapshots = [];
+		recreateModal = {
+			name: cName, image: snap?.image || '?', output: '', done: false,
+			steps: [
+				{ text: $t('containers.rollbackPull'), status: 'running' },
+				{ text: $t('containers.stopRemove'), status: 'pending' },
+				{ text: $t('containers.rollbackRestore'), status: 'pending' },
+			]
+		};
+		setTimeout(() => { if (recreateModal && !recreateModal.done) { recreateModal.steps[0].status = 'done'; recreateModal.steps[1].status = 'running'; recreateModal = { ...recreateModal }; } }, 3000);
+		setTimeout(() => { if (recreateModal && !recreateModal.done) { recreateModal.steps[1].status = 'done'; recreateModal.steps[2].status = 'running'; recreateModal = { ...recreateModal }; } }, 6000);
+		const r = await api.post<string>(`/env/${$selectedEnv}/containers/${cId}/rollback`, { snapshot_id: snapshotId });
+		if (r.success) {
+			recreateModal!.steps.forEach(s => { s.status = 'done'; });
+			recreateModal!.output = r.data || '';
+			recreateModal!.done = true;
+			recreateModal = { ...recreateModal! };
+			setTimeout(load, 1500);
+		} else {
+			const failIdx = recreateModal!.steps.findIndex(s => s.status === 'running');
+			if (failIdx >= 0) recreateModal!.steps[failIdx].status = 'error';
+			recreateModal!.output = r.error || $t('common.error');
+			recreateModal!.done = true;
+			recreateModal = { ...recreateModal! };
+		}
 	}
 
 	async function deleteSnapshot(snapshotId: number) {

@@ -626,6 +626,51 @@ async fn recreate_container(
     Ok(Json(ApiResponse::ok(format!("Container '{}' recreated", name))))
 }
 
+async fn rollback_container(
+    State(state): State<Arc<AgentState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: String,
+) -> Result<Json<ApiResponse<String>>, StatusCode> {
+    state.check_auth(&headers)?;
+
+    let snapshot: bollard::models::ContainerInspectResponse = serde_json::from_str(&body)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let config = snapshot.config.ok_or(StatusCode::BAD_REQUEST)?;
+    let image = config.image.clone().unwrap_or_default();
+    let name = snapshot.name.unwrap_or_default().trim_start_matches('/').to_string();
+    let host_config = snapshot.host_config;
+    let net_config = snapshot.network_settings.and_then(|ns| ns.networks).map(|nets| {
+        let eps: std::collections::HashMap<String, bollard::models::EndpointSettings> = nets.into_iter().map(|(k, v)| (k, bollard::models::EndpointSettings { aliases: v.aliases, network_id: v.network_id, ..Default::default() })).collect();
+        bollard::container::NetworkingConfig { endpoints_config: eps }
+    });
+
+    // Pull old image (may already be local)
+    use bollard::image::CreateImageOptions;
+    let (repo, tag) = if let Some((r, t)) = image.split_once(':') { (r.to_string(), t.to_string()) } else { (image.clone(), "latest".to_string()) };
+    let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
+    while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
+
+    // Stop & remove current container
+    let _ = state.docker.stop_container(&id, Some(bollard::container::StopContainerOptions { t: 10 })).await;
+    let _ = state.docker.remove_container(&id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await;
+
+    // Create from snapshot config
+    let body = bollard::container::Config {
+        image: Some(image.clone()), hostname: config.hostname, domainname: config.domainname, user: config.user,
+        env: config.env, cmd: config.cmd, entrypoint: config.entrypoint, working_dir: config.working_dir,
+        labels: config.labels, exposed_ports: config.exposed_ports, volumes: config.volumes,
+        tty: config.tty, open_stdin: config.open_stdin, host_config, networking_config: net_config, ..Default::default()
+    };
+    let created = state.docker.create_container(Some(bollard::container::CreateContainerOptions { name: name.clone(), ..Default::default() }), body).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(ApiResponse::ok(format!("Container '{}' rolled back to '{}'", name, image))))
+}
+
 async fn remove_image(
     State(state): State<Arc<AgentState>>,
     headers: HeaderMap,
@@ -1540,6 +1585,7 @@ async fn main() {
         .route("/api/containers/{id}/check-update", post(check_container_update))
         .route("/api/containers/{id}/inspect", get(inspect_container))
         .route("/api/containers/{id}/recreate", post(recreate_container))
+        .route("/api/containers/{id}/rollback", post(rollback_container))
         .route("/api/containers/{id}/terminal", get(agent_terminal))
         .route("/api/stats", get(agent_stats_live))
         .route("/api/docker/login", post(agent_docker_login))

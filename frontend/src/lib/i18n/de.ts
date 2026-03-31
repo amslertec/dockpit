@@ -128,6 +128,8 @@ export const de: Record<string, string> = {
 	'containers.rollbackSuccess': 'Container erfolgreich zurückgesetzt',
 	'containers.noSnapshots': 'Keine Snapshots vorhanden. Snapshots werden automatisch vor jedem Recreate erstellt.',
 	'containers.snapshotDeleted': 'Snapshot gelöscht',
+	'containers.rollbackPull': 'Vorheriges Image wird geladen...',
+	'containers.rollbackRestore': 'Container wird wiederhergestellt...',
 
 	// === Images ===
 	'images.title': 'Images',
