@@ -287,12 +287,20 @@ impl DockerClient {
             .map_err(|e| format!("Snapshot ungültig: {}", e))?;
 
         let config = inspect.config.ok_or("Keine Config im Snapshot")?;
-        let image = config.image.clone().unwrap_or_default();
+        let image_tag = config.image.clone().unwrap_or_default();
+        // Use the exact image ID (sha256) from the snapshot — not the tag which may have moved
+        let image_id = inspect.image.clone().unwrap_or_default();
+        let image = if !image_id.is_empty() { image_id.clone() } else { image_tag.clone() };
         let name = inspect.name.unwrap_or_default().trim_start_matches('/').to_string();
         let host_config = inspect.host_config;
 
-        // Pull the old image (might still be local)
-        self.pull_image(&image).await.ok(); // Ignore pull errors - image might be local only
+        // Check if the exact image ID still exists locally
+        let image_exists = self.docker.inspect_image(&image).await.is_ok();
+        if !image_exists {
+            // Image was pruned — try to pull by tag as fallback (may get newer version)
+            tracing::warn!("Rollback: Image {} not found locally, pulling {} as fallback", image, image_tag);
+            self.pull_image(&image_tag).await.ok();
+        }
 
         // Stop and remove current container
         let _ = self.docker.stop_container(current_id, Some(bollard::container::StopContainerOptions { t: 10 })).await;

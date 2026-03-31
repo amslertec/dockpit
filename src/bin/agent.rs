@@ -638,7 +638,10 @@ async fn rollback_container(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let config = snapshot.config.ok_or(StatusCode::BAD_REQUEST)?;
-    let image = config.image.clone().unwrap_or_default();
+    let image_tag = config.image.clone().unwrap_or_default();
+    // Use exact image ID (sha256) from snapshot — tag may have moved to a newer version
+    let image_id = snapshot.image.clone().unwrap_or_default();
+    let image = if !image_id.is_empty() { image_id.clone() } else { image_tag.clone() };
     let name = snapshot.name.unwrap_or_default().trim_start_matches('/').to_string();
     let host_config = snapshot.host_config;
     let net_config = snapshot.network_settings.and_then(|ns| ns.networks).map(|nets| {
@@ -646,11 +649,14 @@ async fn rollback_container(
         bollard::container::NetworkingConfig { endpoints_config: eps }
     });
 
-    // Pull old image (may already be local)
-    use bollard::image::CreateImageOptions;
-    let (repo, tag) = if let Some((r, t)) = image.split_once(':') { (r.to_string(), t.to_string()) } else { (image.clone(), "latest".to_string()) };
-    let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
-    while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
+    // Check if exact image ID exists locally — only pull by tag if not
+    let image_exists = state.docker.inspect_image(&image).await.is_ok();
+    if !image_exists {
+        use bollard::image::CreateImageOptions;
+        let (repo, tag) = if let Some((r, t)) = image_tag.split_once(':') { (r.to_string(), t.to_string()) } else { (image_tag.clone(), "latest".to_string()) };
+        let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
+        while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
+    }
 
     // Stop & remove current container
     let _ = state.docker.stop_container(&id, Some(bollard::container::StopContainerOptions { t: 10 })).await;
