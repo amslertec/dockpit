@@ -3,9 +3,7 @@ services:
     image: amslertec/dockpit:latest
     container_name: dockpit
     restart: unless-stopped
-    ports:
-      - "5533:5533"
-      - "5539:5539"
+    network_mode: host
     volumes:
       - dockpit_data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
