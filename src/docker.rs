@@ -288,17 +288,28 @@ impl DockerClient {
 
         let config = inspect.config.ok_or("Keine Config im Snapshot")?;
         let image_tag = config.image.clone().unwrap_or_default();
-        // Use the exact image ID (sha256) from the snapshot — not the tag which may have moved
         let image_id = inspect.image.clone().unwrap_or_default();
-        let image = if !image_id.is_empty() { image_id.clone() } else { image_tag.clone() };
         let name = inspect.name.unwrap_or_default().trim_start_matches('/').to_string();
         let host_config = inspect.host_config;
 
-        // Check if the exact image ID still exists locally
-        let image_exists = self.docker.inspect_image(&image).await.is_ok();
-        if !image_exists {
-            // Image was pruned — try to pull by tag as fallback (may get newer version)
-            tracing::warn!("Rollback: Image {} not found locally, pulling {} as fallback", image, image_tag);
+        // Re-tag the old image back to the original tag name so the container
+        // displays the correct name and update-check works properly
+        if !image_id.is_empty() && !image_tag.is_empty() {
+            let id_exists = self.docker.inspect_image(&image_id).await.is_ok();
+            if id_exists {
+                // Re-tag: sha256:OLD → original:tag (e.g. amslertec/dockpit:latest)
+                let (repo, tag) = if let Some((r, t)) = image_tag.split_once(':') {
+                    (r.to_string(), t.to_string())
+                } else {
+                    (image_tag.clone(), "latest".to_string())
+                };
+                self.docker.tag_image(&image_id, Some(bollard::image::TagImageOptions { repo: repo.as_str(), tag: tag.as_str() })).await.ok();
+                tracing::info!("Rollback: Re-tagged {} → {}:{}", image_id, repo, tag);
+            } else {
+                tracing::warn!("Rollback: Image {} not found locally, pulling {} as fallback", image_id, image_tag);
+                self.pull_image(&image_tag).await.ok();
+            }
+        } else if !image_tag.is_empty() {
             self.pull_image(&image_tag).await.ok();
         }
 
@@ -323,7 +334,7 @@ impl DockerClient {
             });
 
         let body = bollard::container::Config {
-            image: Some(image.clone()),
+            image: Some(image_tag.clone()),
             hostname: config.hostname,
             domainname: config.domainname,
             user: config.user,
@@ -353,7 +364,7 @@ impl DockerClient {
         self.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
             .map_err(|e| format!("Start: {}", e))?;
 
-        Ok(format!("Container '{}' zurückgesetzt auf Image '{}'", name, image))
+        Ok(format!("Container '{}' zurückgesetzt auf Image '{}'", name, image_tag))
     }
 
     pub async fn create_exec(

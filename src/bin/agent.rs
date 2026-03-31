@@ -639,9 +639,7 @@ async fn rollback_container(
 
     let config = snapshot.config.ok_or(StatusCode::BAD_REQUEST)?;
     let image_tag = config.image.clone().unwrap_or_default();
-    // Use exact image ID (sha256) from snapshot — tag may have moved to a newer version
     let image_id = snapshot.image.clone().unwrap_or_default();
-    let image = if !image_id.is_empty() { image_id.clone() } else { image_tag.clone() };
     let name = snapshot.name.unwrap_or_default().trim_start_matches('/').to_string();
     let host_config = snapshot.host_config;
     let net_config = snapshot.network_settings.and_then(|ns| ns.networks).map(|nets| {
@@ -649,22 +647,27 @@ async fn rollback_container(
         bollard::container::NetworkingConfig { endpoints_config: eps }
     });
 
-    // Check if exact image ID exists locally — only pull by tag if not
-    let image_exists = state.docker.inspect_image(&image).await.is_ok();
-    if !image_exists {
-        use bollard::image::CreateImageOptions;
-        let (repo, tag) = if let Some((r, t)) = image_tag.split_once(':') { (r.to_string(), t.to_string()) } else { (image_tag.clone(), "latest".to_string()) };
-        let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
-        while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
+    // Re-tag old image to original name, or pull by tag if pruned
+    if !image_id.is_empty() && !image_tag.is_empty() {
+        let id_exists = state.docker.inspect_image(&image_id).await.is_ok();
+        if id_exists {
+            let (repo, tag) = if let Some((r, t)) = image_tag.split_once(':') { (r.to_string(), t.to_string()) } else { (image_tag.clone(), "latest".to_string()) };
+            state.docker.tag_image(&image_id, Some(bollard::image::TagImageOptions { repo: repo.as_str(), tag: tag.as_str() })).await.ok();
+        } else {
+            use bollard::image::CreateImageOptions;
+            let (repo, tag) = if let Some((r, t)) = image_tag.split_once(':') { (r.to_string(), t.to_string()) } else { (image_tag.clone(), "latest".to_string()) };
+            let mut stream = state.docker.create_image(Some(CreateImageOptions { from_image: repo, tag, ..Default::default() }), None, None);
+            while let Some(r) = futures_lite::StreamExt::next(&mut stream).await { let _ = r; }
+        }
     }
 
     // Stop & remove current container
     let _ = state.docker.stop_container(&id, Some(bollard::container::StopContainerOptions { t: 10 })).await;
     let _ = state.docker.remove_container(&id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await;
 
-    // Create from snapshot config
+    // Create from snapshot config with original tag name
     let body = bollard::container::Config {
-        image: Some(image.clone()), hostname: config.hostname, domainname: config.domainname, user: config.user,
+        image: Some(image_tag.clone()), hostname: config.hostname, domainname: config.domainname, user: config.user,
         env: config.env, cmd: config.cmd, entrypoint: config.entrypoint, working_dir: config.working_dir,
         labels: config.labels, exposed_ports: config.exposed_ports, volumes: config.volumes,
         tty: config.tty, open_stdin: config.open_stdin, host_config, networking_config: net_config, ..Default::default()
@@ -674,7 +677,7 @@ async fn rollback_container(
     state.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(ApiResponse::ok(format!("Container '{}' rolled back to '{}'", name, image))))
+    Ok(Json(ApiResponse::ok(format!("Container '{}' rolled back to '{}'", name, image_tag))))
 }
 
 async fn remove_image(
