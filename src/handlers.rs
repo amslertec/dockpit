@@ -2077,29 +2077,72 @@ pub async fn create_environment(
 
 pub async fn discover_agents(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Json<ApiResponse<Vec<serde_json::Value>>> {
-    // Get local IPs to determine subnets to scan
     let mut results = Vec::new();
     let existing_urls: Vec<String> = state.db.get_environments().iter().map(|e| e.url.clone()).collect();
 
-    // Scan common private subnets based on server's network
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(800))
         .build()
         .unwrap();
 
-    // Get the server's own IPs to determine subnet
-    let output = tokio::process::Command::new("hostname")
-        .arg("-I")
-        .output()
-        .await;
-
     let mut subnets_to_scan: Vec<String> = Vec::new();
-    if let Ok(out) = output {
-        let ips = String::from_utf8_lossy(&out.stdout);
-        for ip in ips.split_whitespace() {
-            if let Some(prefix) = ip.rsplitn(2, '.').last() {
-                subnets_to_scan.push(prefix.to_string());
+
+    // Use user-provided subnet if given (e.g. "192.168.1")
+    if let Some(subnet) = query.get("subnet") {
+        let s = subnet.trim();
+        if !s.is_empty() {
+            // Support full CIDR notation "192.168.1.0/24" or just "192.168.1"
+            let prefix = s.split('/').next().unwrap_or(s);
+            // Strip last octet if 4 parts given
+            let parts: Vec<&str> = prefix.split('.').collect();
+            if parts.len() == 4 {
+                subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
+            } else if parts.len() == 3 {
+                subnets_to_scan.push(s.to_string());
+            }
+        }
+    }
+
+    // Auto-detect: get host gateway via default route (works inside Docker)
+    if subnets_to_scan.is_empty() {
+        let output = tokio::process::Command::new("ip")
+            .args(["route", "show", "default"])
+            .output()
+            .await;
+        if let Ok(out) = output {
+            let route = String::from_utf8_lossy(&out.stdout);
+            // Parse "default via 192.168.1.1 dev eth0" → subnet "192.168.1"
+            for word in route.split_whitespace() {
+                if word.contains('.') && word != "default" {
+                    let parts: Vec<&str> = word.split('.').collect();
+                    if parts.len() == 4 {
+                        subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: hostname -I
+    if subnets_to_scan.is_empty() {
+        let output = tokio::process::Command::new("hostname")
+            .arg("-I")
+            .output()
+            .await;
+        if let Ok(out) = output {
+            let ips = String::from_utf8_lossy(&out.stdout);
+            for ip in ips.split_whitespace() {
+                let parts: Vec<&str> = ip.split('.').collect();
+                if parts.len() == 4 {
+                    let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+                    // Skip Docker internal subnets
+                    if !subnet.starts_with("172.") {
+                        subnets_to_scan.push(subnet);
+                    }
+                }
             }
         }
     }
@@ -2108,6 +2151,10 @@ pub async fn discover_agents(
         subnets_to_scan.push("192.168.1".to_string());
     }
 
+    // Deduplicate
+    subnets_to_scan.sort();
+    subnets_to_scan.dedup();
+
     // Scan each subnet in parallel
     let mut handles = Vec::new();
     for subnet in &subnets_to_scan {
@@ -2115,7 +2162,6 @@ pub async fn discover_agents(
             let ip = format!("{}.{}", subnet, i);
             let url = format!("http://{}:5522", ip);
 
-            // Skip already connected agents
             if existing_urls.iter().any(|u| u.contains(&ip)) {
                 continue;
             }

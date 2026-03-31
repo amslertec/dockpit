@@ -250,6 +250,7 @@ export const de: Record<string, string> = {
 	'env.autoDiscovery': 'Netzwerk-Erkennung',
 	'env.autoDiscoveryDesc': 'Lokales Netzwerk nach DockPit Agents auf Port 5522 scannen.',
 	'env.scanNetwork': 'Netzwerk scannen',
+	'env.subnet': 'Subnetz (optional)',
 	'env.scanning': 'Scanne...',
 	'env.noAgentsFound': 'Keine Agents im Netzwerk gefunden',
 	'env.connectAgent': 'Verbinden',

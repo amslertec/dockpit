@@ -52,6 +52,7 @@
 	// Discovery
 	let discovering = $state(false);
 	let discoveredAgents = $state<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>([]);
+	let scanSubnet = $state('');
 
 	const tabs = [
 		{ id: 0, label: $t('env.connectedServers') },
@@ -123,7 +124,8 @@
 	async function discoverAgents() {
 		discovering = true;
 		discoveredAgents = [];
-		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>('/agents/discover', {});
+		const params = scanSubnet ? `?subnet=${encodeURIComponent(scanSubnet)}` : '';
+		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>(`/agents/discover${params}`, {});
 		discovering = false;
 		if (r.success && r.data) {
 			discoveredAgents = r.data.filter(a => !a.paired);
@@ -325,10 +327,21 @@
 				<div class="mt-6 pt-5 border-t border-theme">
 					<h3 class="text-sm font-semibold text-primary mb-2">{$t('env.autoDiscovery')}</h3>
 					<p class="text-xs text-secondary mb-3">{$t('env.autoDiscoveryDesc')}</p>
-					<Button variant="secondary" size="md" onclick={discoverAgents} loading={discovering}>
-						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-						{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
-					</Button>
+					<div class="flex items-end gap-3 flex-wrap">
+						<div class="flex-1 min-w-[180px] max-w-[250px]">
+							<label class="block text-xs font-medium text-secondary mb-1">{$t('env.subnet')}</label>
+							<input
+								type="text"
+								bind:value={scanSubnet}
+								placeholder="192.168.1"
+								class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+							/>
+						</div>
+						<Button variant="secondary" size="md" onclick={discoverAgents} loading={discovering}>
+							<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+							{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
+						</Button>
+					</div>
 
 					{#if discoveredAgents.length > 0}
 						<div class="mt-4 space-y-2">
