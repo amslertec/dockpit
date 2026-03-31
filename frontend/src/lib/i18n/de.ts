@@ -130,6 +130,32 @@ export const de: Record<string, string> = {
 	'containers.snapshotDeleted': 'Snapshot gelöscht',
 	'containers.rollbackPull': 'Vorheriges Image wird geladen...',
 	'containers.rollbackRestore': 'Container wird wiederhergestellt...',
+	'containers.snippets': 'Snippets',
+	'containers.addSnippet': 'Snippet hinzufügen',
+	'containers.snippetTitle': 'Titel',
+	'containers.snippetCommand': 'Befehl',
+	'containers.noSnippets': 'Noch keine Snippets gespeichert',
+	'containers.runSnippet': 'Ausführen',
+	'containers.compare': 'Vergleichen',
+	'containers.changes': 'Änderungen',
+	'containers.noChanges': 'Keine Änderungen erkannt',
+
+	// === Alerts ===
+	'alerts.title': 'Alert-Regeln',
+	'alerts.name': 'Regelname',
+	'alerts.event': 'Wenn',
+	'alerts.action': 'Dann',
+	'alerts.noRules': 'Keine Alert-Regeln konfiguriert',
+	'alerts.addRule': 'Regel hinzufügen',
+	'alerts.containerStop': 'Container stoppt',
+	'alerts.containerOom': 'Container OOM Kill',
+	'alerts.containerRestart': 'Container Restart-Loop',
+	'alerts.actionRestart': 'Container automatisch starten',
+	'alerts.actionNotify': 'Benachrichtigung senden',
+	'alerts.actionPrune': 'Docker System Prune',
+	'alerts.lastTriggered': 'Zuletzt ausgelöst',
+	'alerts.triggerCount': 'Ausgelöst',
+	'alerts.times': 'mal',
 
 	// === Images ===
 	'images.title': 'Images',
@@ -690,6 +716,15 @@ export const de: Record<string, string> = {
 	'audit.jobCreate': 'Job erstellen',
 	'audit.jobDelete': 'Job l\u00f6schen',
 	'audit.containerMigrate': 'Container migrieren',
+	'audit.containerRestart': 'Container neustarten',
+	'audit.containerRemove': 'Container entfernen',
+	'audit.containerStart': 'Container starten',
+	'audit.containerStop': 'Container stoppen',
+	'audit.containerRollback': 'Container Rollback',
+	'audit.backupScheduled': 'Backup geplant',
+	'audit.backupCreate': 'Backup erstellt',
+	'audit.templateCreate': 'Vorlage erstellt',
+	'audit.loginBlocked': 'Anmeldung blockiert',
 
 	// === Favoriten ===
 	// === Vorlagen ===

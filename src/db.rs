@@ -207,6 +207,28 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_container_snapshots_name ON container_snapshots(container_name);
         ")?;
 
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS shell_snippets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                container_name TEXT NOT NULL,
+                title TEXT NOT NULL,
+                command TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS alert_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                event_match TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                config_json TEXT,
+                last_triggered TEXT,
+                trigger_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        ")?;
+
         Ok(())
     }
 
@@ -571,6 +593,69 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM container_snapshots WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // === Shell Snippets ===
+
+    pub fn get_snippets(&self, container_name: &str) -> Vec<(i64, String, String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, title, command, created_at FROM shell_snippets WHERE container_name = ?1 ORDER BY title").unwrap();
+        stmt.query_map(params![container_name], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn save_snippet(&self, container_name: &str, title: &str, command: &str) -> Result<i64, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO shell_snippets (container_name, title, command) VALUES (?1, ?2, ?3)", params![container_name, title, command])?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn delete_snippet(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM shell_snippets WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // === Alert Rules ===
+
+    pub fn get_alert_rules(&self) -> Vec<(i64, String, bool, String, String, Option<String>, Option<String>, i64)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, enabled, event_match, action_type, config_json, last_triggered, trigger_count FROM alert_rules ORDER BY name").unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get::<_, i32>(2)? != 0, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn create_alert_rule(&self, name: &str, event_match: &str, action_type: &str, config_json: Option<&str>) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO alert_rules (name, event_match, action_type, config_json) VALUES (?1, ?2, ?3, ?4)",
+            params![name, event_match, action_type, config_json])?;
+        Ok(())
+    }
+
+    pub fn update_alert_rule_enabled(&self, id: i64, enabled: bool) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE alert_rules SET enabled = ?1 WHERE id = ?2", params![enabled as i32, id])?;
+        Ok(())
+    }
+
+    pub fn delete_alert_rule(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM alert_rules WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn mark_alert_triggered(&self, id: i64) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE alert_rules SET last_triggered = datetime('now'), trigger_count = trigger_count + 1 WHERE id = ?1", params![id]).ok();
+    }
+
+    pub fn get_recent_event_actions(&self, seconds: i64) -> Vec<(String, Option<String>, Option<String>, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            &format!("SELECT env_id, container_id, container_name, event_action FROM container_events WHERE timestamp > datetime('now', '-{} seconds')", seconds)
+        ).unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
     }
 
     // === Update Checks ===

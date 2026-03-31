@@ -27,6 +27,13 @@
 
 	let ctxMenu = $state<{ x: number; y: number; hasSelection: boolean } | null>(null);
 
+	// Snippets
+	let snippets = $state<{id: number; title: string; command: string}[]>([]);
+	let showSnippets = $state(false);
+	let newSnippetTitle = $state('');
+	let newSnippetCommand = $state('');
+	let showAddSnippet = $state(false);
+
 	const shells = [
 		{ value: '/bin/bash', label: '/bin/bash' },
 		{ value: '/bin/sh', label: '/bin/sh' },
@@ -39,9 +46,34 @@
 		const r = await api.get<any[]>(`/env/${$selectedEnv}/containers`);
 		if (r.success && r.data) {
 			const c = r.data.find((x: any) => x.id === containerId || x.id.startsWith(containerId));
-			if (c) containerName = c.name;
+			if (c) { containerName = c.name; loadSnippets(); }
 		}
 	});
+
+	async function loadSnippets() {
+		if (!containerName) return;
+		const r = await api.get<{id: number; title: string; command: string}[]>(`/snippets/${encodeURIComponent(containerName)}`);
+		if (r.success && r.data) snippets = r.data;
+	}
+
+	function runSnippet(command: string) {
+		if (ws && ws.readyState === WebSocket.OPEN) {
+			ws.send(command + '\n');
+		}
+	}
+
+	async function saveSnippet() {
+		if (!newSnippetTitle.trim() || !newSnippetCommand.trim()) return;
+		await api.post<string>(`/snippets/create/${encodeURIComponent(containerName)}`, { title: newSnippetTitle, command: newSnippetCommand });
+		newSnippetTitle = ''; newSnippetCommand = '';
+		showAddSnippet = false;
+		loadSnippets();
+	}
+
+	async function deleteSnippet(id: number) {
+		await api.del<string>(`/snippets/item/${id}`);
+		snippets = snippets.filter(s => s.id !== id);
+	}
 
 	onDestroy(() => disconnect());
 
@@ -226,6 +258,59 @@
 		</div>
 		{#if error}
 			<div class="mt-2 px-3 py-2 bg-[var(--red-bg)] text-[var(--red)] text-xs rounded-[var(--radius-md)]">{error}</div>
+		{/if}
+	</div>
+
+	<!-- Snippets Panel -->
+	<div class="bg-card border border-[var(--border)] rounded-[var(--radius-lg)] mb-3 shrink-0">
+		<button class="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text)] transition" onclick={() => showSnippets = !showSnippets}>
+			<span class="flex items-center gap-2">
+				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+				{$t('containers.snippets')} ({snippets.length})
+			</span>
+			<svg class="w-3 h-3 transition-transform {showSnippets ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+		</button>
+		{#if showSnippets}
+			<div class="px-4 pb-3 space-y-2 border-t border-[var(--border)]">
+				{#if snippets.length === 0}
+					<p class="text-xs text-[var(--text-muted)] py-2">{$t('containers.noSnippets')}</p>
+				{:else}
+					<div class="grid gap-1.5 mt-2">
+						{#each snippets as snippet}
+							<div class="flex items-center gap-2 bg-[var(--bg-0)] rounded-[var(--radius-md)] px-3 py-1.5">
+								<div class="flex-1 min-w-0">
+									<div class="text-xs font-medium text-[var(--text)] truncate">{snippet.title}</div>
+									<div class="text-[10px] font-mono text-[var(--text-muted)] truncate">{snippet.command}</div>
+								</div>
+								<button class="shrink-0 px-2 py-1 text-[10px] font-medium rounded-[var(--radius-sm)] bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition" onclick={() => runSnippet(snippet.command)} disabled={!connected}>
+									{$t('containers.runSnippet')}
+								</button>
+								<button class="shrink-0 w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--red)] hover:bg-[var(--red)]/10 transition" onclick={() => deleteSnippet(snippet.id)}>
+									<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				{#if showAddSnippet}
+					<div class="flex items-end gap-2 mt-2">
+						<div class="flex-1">
+							<label class="block text-[10px] font-medium text-[var(--text-secondary)] mb-0.5">{$t('containers.snippetTitle')}</label>
+							<input bind:value={newSnippetTitle} placeholder="e.g. Check logs"
+								class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2 py-1 text-xs text-[var(--text)] focus:border-[var(--input-focus)] focus:outline-none transition" />
+						</div>
+						<div class="flex-1">
+							<label class="block text-[10px] font-medium text-[var(--text-secondary)] mb-0.5">{$t('containers.snippetCommand')}</label>
+							<input bind:value={newSnippetCommand} placeholder="e.g. tail -f /var/log/app.log"
+								class="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2 py-1 text-xs text-[var(--text)] focus:border-[var(--input-focus)] focus:outline-none transition" />
+						</div>
+						<Button variant="primary" size="sm" onclick={saveSnippet} class="h-[26px] text-[10px]">{$t('common.save')}</Button>
+						<Button variant="secondary" size="sm" onclick={() => { showAddSnippet = false; newSnippetTitle = ''; newSnippetCommand = ''; }} class="h-[26px] text-[10px]">{$t('common.cancel')}</Button>
+					</div>
+				{:else}
+					<button class="text-[10px] text-[var(--accent)] hover:underline mt-1" onclick={() => showAddSnippet = true}>+ {$t('containers.addSnippet')}</button>
+				{/if}
+			</div>
 		{/if}
 	</div>
 

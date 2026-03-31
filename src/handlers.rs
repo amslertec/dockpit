@@ -1547,6 +1547,242 @@ pub async fn delete_snapshot(
     }
 }
 
+// === Shell Snippets ===
+
+pub async fn get_snippets(
+    State(state): State<Arc<AppState>>,
+    Path(container_name): Path<String>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    let snippets = state.db.get_snippets(&container_name);
+    let result: Vec<serde_json::Value> = snippets.iter().map(|(id, title, command, created_at)| {
+        serde_json::json!({ "id": id, "title": title, "command": command, "created_at": created_at })
+    }).collect();
+    Json(ApiResponse::ok(result))
+}
+
+pub async fn create_snippet(
+    State(state): State<Arc<AppState>>,
+    Path(container_name): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let title = req.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let command = req.get("command").and_then(|v| v.as_str()).unwrap_or("");
+    if title.is_empty() || command.is_empty() {
+        return Json(ApiResponse::err("Titel und Befehl erforderlich"));
+    }
+    match state.db.save_snippet(&container_name, title, command) {
+        Ok(_) => Json(ApiResponse::ok("Snippet gespeichert".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+pub async fn delete_snippet_handler(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_snippet(id) {
+        Ok(_) => Json(ApiResponse::ok("Snippet gelöscht".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+// === Alert Rules ===
+
+pub async fn get_alert_rules(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    let rules = state.db.get_alert_rules();
+    let result: Vec<serde_json::Value> = rules.iter().map(|(id, name, enabled, event_match, action_type, config_json, last_triggered, trigger_count)| {
+        serde_json::json!({
+            "id": id, "name": name, "enabled": enabled,
+            "event_match": event_match, "action_type": action_type,
+            "config_json": config_json, "last_triggered": last_triggered,
+            "trigger_count": trigger_count,
+        })
+    }).collect();
+    Json(ApiResponse::ok(result))
+}
+
+pub async fn create_alert_rule(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let event_match = req.get("event_match").and_then(|v| v.as_str()).unwrap_or("");
+    let action_type = req.get("action_type").and_then(|v| v.as_str()).unwrap_or("");
+    if name.is_empty() || event_match.is_empty() || action_type.is_empty() {
+        return Json(ApiResponse::err("Name, Event und Aktion erforderlich"));
+    }
+    let config_json = req.get("config_json").and_then(|v| v.as_str());
+    match state.db.create_alert_rule(name, event_match, action_type, config_json) {
+        Ok(_) => Json(ApiResponse::ok("Regel erstellt".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+pub async fn toggle_alert_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let enabled = req.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    match state.db.update_alert_rule_enabled(id, enabled) {
+        Ok(_) => Json(ApiResponse::ok("Aktualisiert".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+pub async fn delete_alert_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_alert_rule(id) {
+        Ok(_) => Json(ApiResponse::ok("Regel gelöscht".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+pub async fn evaluate_alert_rules(state: Arc<AppState>) {
+    let rules = state.db.get_alert_rules();
+    if rules.is_empty() { return; }
+
+    let events = state.db.get_recent_event_actions(60);
+
+    for (id, name, enabled, event_match, action_type, _config_json, _last_triggered, _trigger_count) in &rules {
+        if !enabled { continue; }
+
+        for (_env_id, container_id, container_name, event_action) in &events {
+            let matches = match event_match.as_str() {
+                "container_stop" => event_action == "stop" || event_action == "die",
+                "container_oom" => event_action == "oom",
+                "container_restart_loop" => event_action == "restart",
+                _ => event_action == event_match,
+            };
+
+            if !matches { continue; }
+
+            match action_type.as_str() {
+                "restart" => {
+                    if let Some(cid) = container_id {
+                        tokio::process::Command::new("docker").args(["start", cid]).output().await.ok();
+                        tracing::info!("Auto-fix: Started container {} (rule: {})", container_name.as_deref().unwrap_or("?"), name);
+                        state.db.mark_alert_triggered(*id);
+                        state.db.create_notification("alert_autofix", &format!("Auto-Fix: {}", name), &format!("Container {} automatisch gestartet", container_name.as_deref().unwrap_or("?"))).ok();
+                    }
+                }
+                "notify" => {
+                    state.db.create_notification("alert", &format!("Alert: {}", name), &format!("Event '{}' für Container {}", event_action, container_name.as_deref().unwrap_or("?"))).ok();
+                    state.db.mark_alert_triggered(*id);
+                }
+                "prune" => {
+                    tokio::process::Command::new("docker").args(["system", "prune", "-f"]).output().await.ok();
+                    state.db.mark_alert_triggered(*id);
+                    state.db.create_notification("alert_autofix", &format!("Auto-Fix: {}", name), "Docker System Prune ausgeführt").ok();
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+// === Container Diff ===
+
+pub async fn get_snapshot_diff(
+    State(state): State<Arc<AppState>>,
+    Path((id1, id2)): Path<(i64, i64)>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let snap1 = match state.db.get_snapshot_by_id(id1) {
+        Some(s) => s,
+        None => return Json(ApiResponse::err("Snapshot 1 nicht gefunden")),
+    };
+    let snap2 = match state.db.get_snapshot_by_id(id2) {
+        Some(s) => s,
+        None => return Json(ApiResponse::err("Snapshot 2 nicht gefunden")),
+    };
+
+    let (name1, image1, json1) = snap1;
+    let (_name2, image2, json2) = snap2;
+
+    let v1: serde_json::Value = serde_json::from_str(&json1).unwrap_or_default();
+    let v2: serde_json::Value = serde_json::from_str(&json2).unwrap_or_default();
+
+    let mut changes = Vec::new();
+
+    // Image diff
+    if image1 != image2 {
+        changes.push(serde_json::json!({ "field": "Image", "old": image1, "new": image2 }));
+    }
+
+    // Image ID diff
+    let id1_val = v1.get("Image").and_then(|v| v.as_str()).unwrap_or("");
+    let id2_val = v2.get("Image").and_then(|v| v.as_str()).unwrap_or("");
+    if id1_val != id2_val {
+        changes.push(serde_json::json!({ "field": "Image ID", "old": &id1_val[..std::cmp::min(id1_val.len(), 19)], "new": &id2_val[..std::cmp::min(id2_val.len(), 19)] }));
+    }
+
+    // Env vars diff
+    let env1: Vec<&str> = v1.pointer("/Config/Env").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+    let env2: Vec<&str> = v2.pointer("/Config/Env").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+    for e in &env1 {
+        if !env2.contains(e) {
+            let key = e.split('=').next().unwrap_or(e);
+            let in_new = env2.iter().any(|o| o.split('=').next() == Some(key));
+            if !in_new {
+                changes.push(serde_json::json!({ "field": "Env removed", "old": key, "new": "" }));
+            }
+        }
+    }
+    for e in &env2 {
+        if !env1.contains(e) {
+            let key = e.split('=').next().unwrap_or(e);
+            let in_old = env1.iter().any(|o| o.split('=').next() == Some(key));
+            if in_old {
+                changes.push(serde_json::json!({ "field": "Env changed", "old": key, "new": e.split('=').nth(1).unwrap_or("") }));
+            } else {
+                changes.push(serde_json::json!({ "field": "Env added", "old": "", "new": key }));
+            }
+        }
+    }
+
+    // Ports diff
+    let ports1 = v1.pointer("/HostConfig/PortBindings").cloned().unwrap_or_default();
+    let ports2 = v2.pointer("/HostConfig/PortBindings").cloned().unwrap_or_default();
+    if ports1 != ports2 {
+        changes.push(serde_json::json!({ "field": "Ports", "old": ports1.to_string(), "new": ports2.to_string() }));
+    }
+
+    // Volumes/Binds diff
+    let binds1: Vec<&str> = v1.pointer("/HostConfig/Binds").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+    let binds2: Vec<&str> = v2.pointer("/HostConfig/Binds").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).collect()).unwrap_or_default();
+    for b in &binds1 { if !binds2.contains(b) { changes.push(serde_json::json!({ "field": "Volume removed", "old": b, "new": "" })); } }
+    for b in &binds2 { if !binds1.contains(b) { changes.push(serde_json::json!({ "field": "Volume added", "old": "", "new": b })); } }
+
+    // Labels diff
+    let labels1 = v1.pointer("/Config/Labels").cloned().unwrap_or_default();
+    let labels2 = v2.pointer("/Config/Labels").cloned().unwrap_or_default();
+    if labels1 != labels2 {
+        if let (Some(l1), Some(l2)) = (labels1.as_object(), labels2.as_object()) {
+            for (k, v) in l1 { if l2.get(k) != Some(v) { changes.push(serde_json::json!({ "field": "Label", "old": format!("{}={}", k, v), "new": l2.get(k).map(|v| v.to_string()).unwrap_or_else(|| "removed".into()) })); } }
+            for (k, v) in l2 { if !l1.contains_key(k) { changes.push(serde_json::json!({ "field": "Label added", "old": "", "new": format!("{}={}", k, v) })); } }
+        }
+    }
+
+    // Network diff
+    let net1 = v1.pointer("/NetworkSettings/Networks").and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
+    let net2 = v2.pointer("/NetworkSettings/Networks").and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
+    if net1 != net2 {
+        changes.push(serde_json::json!({ "field": "Networks", "old": net1.join(", "), "new": net2.join(", ") }));
+    }
+
+    Json(ApiResponse::ok(serde_json::json!({
+        "container": name1,
+        "snapshot1_image": image1,
+        "snapshot2_image": image2,
+        "changes": changes,
+        "total_changes": changes.len(),
+    })))
+}
+
 // === Stack Migration ===
 
 #[derive(Debug, serde::Deserialize)]

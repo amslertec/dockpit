@@ -174,6 +174,7 @@ async fn main() {
         loop {
             // Collect events every 30 seconds (last 60s window)
             handlers::collect_events_since(scheduler_state.clone(), 60).await;
+            handlers::evaluate_alert_rules(scheduler_state.clone()).await;
             // Cleanup old audit log entries every hour (every 120th tick)
             if tick % 120 == 0 {
                 scheduler_state.db.cleanup_old_audit();
@@ -232,6 +233,8 @@ async fn main() {
         .route("/api/dashboard-config", get(handlers::get_dashboard_config))
         .route("/api/dashboard-config", put(handlers::save_dashboard_config))
         .route("/api/snapshots/{container_name}", get(handlers::get_container_snapshots))
+        .route("/api/snippets/{container_name}", get(handlers::get_snippets))
+        .route("/api/snapshots/diff/{id1}/{id2}", get(handlers::get_snapshot_diff))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
@@ -256,6 +259,12 @@ async fn main() {
         .route("/api/env/{env_id}/containers/{container_id}/migrate", post(handlers::env_migrate_container))
         .route("/api/env/{env_id}/containers/{container_id}/rollback", post(handlers::rollback_container))
         .route("/api/snapshots/delete/{id}", delete(handlers::delete_snapshot))
+        .route("/api/snippets/create/{container_name}", post(handlers::create_snippet))
+        .route("/api/snippets/item/{id}", delete(handlers::delete_snippet_handler))
+        .route("/api/alert-rules", get(handlers::get_alert_rules))
+        .route("/api/alert-rules", post(handlers::create_alert_rule))
+        .route("/api/alert-rules/{id}", put(handlers::toggle_alert_rule))
+        .route("/api/alert-rules/{id}", delete(handlers::delete_alert_rule))
         .route("/api/env/{env_id}/stacks/{name}/migrate", post(handlers::env_migrate_stack))
         .route("/api/env/{env_id}/images/pull", post(handlers::env_pull_image))
         .route("/api/env/{env_id}/images/prune", post(handlers::env_prune_images))

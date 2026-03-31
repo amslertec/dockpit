@@ -68,12 +68,20 @@
 	let confirm = $state<{ message: string; action: () => void } | null>(null);
 	let uploadFile = $state<File | null>(null);
 
+	// Alert Rules
+	let alertRules = $state<{id: number; name: string; enabled: boolean; event_match: string; action_type: string; last_triggered: string | null; trigger_count: number}[]>([]);
+	let newRuleName = $state('');
+	let newRuleEvent = $state('container_stop');
+	let newRuleAction = $state('notify');
+	let showAddRule = $state(false);
+
 	const tabs = [
 		{ id: 0, label: $t('profile.general') },
 		{ id: 1, label: $t('settings.updateMonitor') },
 		{ id: 2, label: $t('settings.webhooks') },
 		{ id: 3, label: $t('settings.email') },
 		{ id: 4, label: $t('settings.backup') },
+		{ id: 5, label: $t('alerts.title') },
 	];
 
 	onMount(async () => {
@@ -100,6 +108,7 @@
 		}
 		loading = false;
 		loadBackups();
+		loadAlertRules();
 	});
 
 	async function save() {
@@ -186,6 +195,39 @@
 		testingWebhook = false;
 		if (r.success) toasts.success($t('settings.testSent'));
 		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function loadAlertRules() {
+		const r = await api.get<{id: number; name: string; enabled: boolean; event_match: string; action_type: string; last_triggered: string | null; trigger_count: number}[]>('/alert-rules');
+		if (r.success && r.data) alertRules = r.data;
+	}
+
+	async function addAlertRule() {
+		if (!newRuleName.trim()) return;
+		const r = await api.post<string>('/alert-rules', { name: newRuleName, event_match: newRuleEvent, action_type: newRuleAction });
+		if (r.success) { newRuleName = ''; showAddRule = false; loadAlertRules(); toasts.success($t('settings.saved')); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function toggleAlertRule(id: number, enabled: boolean) {
+		await api.put<string>(`/alert-rules/${id}`, { enabled });
+		loadAlertRules();
+	}
+
+	async function deleteAlertRule(id: number) {
+		const r = await api.del<string>(`/alert-rules/${id}`);
+		if (r.success) alertRules = alertRules.filter(a => a.id !== id);
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	function eventLabel(e: string): string {
+		const map: Record<string, string> = { container_stop: $t('alerts.containerStop'), container_oom: $t('alerts.containerOom'), container_restart_loop: $t('alerts.containerRestart') };
+		return map[e] || e;
+	}
+
+	function actionLabel(a: string): string {
+		const map: Record<string, string> = { restart: $t('alerts.actionRestart'), notify: $t('alerts.actionNotify'), prune: $t('alerts.actionPrune') };
+		return map[a] || a;
 	}
 </script>
 
@@ -398,6 +440,72 @@
 						{/if}
 					</div>
 				</div>
+			<!-- Alerts -->
+			{:else if activeTab === 5}
+				<h3 class="text-sm font-semibold text-primary mb-2">{$t('alerts.title')}</h3>
+				<p class="text-xs text-secondary mb-4">{$t('alerts.noRules')}</p>
+
+				{#if alertRules.length > 0}
+					<div class="space-y-2 mb-4">
+						{#each alertRules as rule}
+							<div class="bg-[var(--bg-0)] border border-theme rounded-lg p-3">
+								<div class="flex items-center justify-between gap-3">
+									<div class="flex items-center gap-3 flex-1 min-w-0">
+										<CustomCheckbox checked={rule.enabled} onchange={(v) => toggleAlertRule(rule.id, v)} size="sm" />
+										<div class="min-w-0 flex-1">
+											<div class="text-xs font-medium text-primary truncate">{rule.name}</div>
+											<div class="text-[10px] text-muted">{eventLabel(rule.event_match)} &rarr; {actionLabel(rule.action_type)}</div>
+											{#if rule.trigger_count > 0}
+												<div class="text-[10px] text-muted mt-0.5">{$t('alerts.triggerCount')}: {rule.trigger_count} {$t('alerts.times')}{#if rule.last_triggered} &middot; {$t('alerts.lastTriggered')}: {formatDateTime(rule.last_triggered)}{/if}</div>
+											{/if}
+										</div>
+									</div>
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => confirm = { message: $t('common.confirm') + '?', action: () => { confirm = null; deleteAlertRule(rule.id); } }}>
+										<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+									</button>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				{#if showAddRule}
+					<div class="bg-[var(--bg-0)] border border-theme rounded-lg p-4 space-y-3">
+						<TextInput bind:value={newRuleName} label={$t('alerts.name')} placeholder="e.g. Auto-restart on crash" />
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label class="block text-[11px] font-medium text-secondary mb-1">{$t('alerts.event')}</label>
+								<CustomSelect
+									options={[
+										{ value: 'container_stop', label: $t('alerts.containerStop') },
+										{ value: 'container_oom', label: $t('alerts.containerOom') },
+										{ value: 'container_restart_loop', label: $t('alerts.containerRestart') },
+									]}
+									value={newRuleEvent}
+									onchange={(v) => newRuleEvent = String(v)}
+								/>
+							</div>
+							<div>
+								<label class="block text-[11px] font-medium text-secondary mb-1">{$t('alerts.action')}</label>
+								<CustomSelect
+									options={[
+										{ value: 'notify', label: $t('alerts.actionNotify') },
+										{ value: 'restart', label: $t('alerts.actionRestart') },
+										{ value: 'prune', label: $t('alerts.actionPrune') },
+									]}
+									value={newRuleAction}
+									onchange={(v) => newRuleAction = String(v)}
+								/>
+							</div>
+						</div>
+						<div class="flex gap-2">
+							<Button variant="primary" size="sm" onclick={addAlertRule}>{$t('common.save')}</Button>
+							<Button variant="secondary" size="sm" onclick={() => { showAddRule = false; newRuleName = ''; }}>{$t('common.cancel')}</Button>
+						</div>
+					</div>
+				{:else}
+					<Button variant="primary" size="sm" onclick={() => showAddRule = true}>{$t('alerts.addRule')}</Button>
+				{/if}
 			{/if}
 		</div>
 	</div>

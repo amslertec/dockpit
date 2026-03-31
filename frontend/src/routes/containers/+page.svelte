@@ -37,6 +37,7 @@
 	let rollbackModal = $state<{ id: string; name: string } | null>(null);
 	let snapshots = $state<{id: number; image: string; created_at: string}[]>([]);
 	let rollingBack = $state(false);
+	let diffData = $state<{changes: {field: string; old: string; new: string}[]; snapshot1_image: string; snapshot2_image: string} | null>(null);
 
 	const migrateTargets = $derived(
 		$environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name }))
@@ -266,6 +267,15 @@
 		const r = await api.del<string>(`/snapshots/delete/${snapshotId}`);
 		if (r.success) { snapshots = snapshots.filter(s => s.id !== snapshotId); toasts.success($t('containers.snapshotDeleted')); }
 		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function showDiff(snapId: number) {
+		if (snapshots.length < 2) return;
+		const currentIdx = snapshots.findIndex(s => s.id === snapId);
+		const compareWith = currentIdx < snapshots.length - 1 ? snapshots[currentIdx + 1].id : snapshots[0].id;
+		if (snapId === compareWith) return;
+		const r = await api.get<any>(`/snapshots/diff/${compareWith}/${snapId}`);
+		if (r.success && r.data) diffData = r.data;
 	}
 
 	async function doRollback(snapshotId: number) {
@@ -675,7 +685,7 @@
 {/if}
 
 {#if rollbackModal}
-	<Modal title={$t('containers.rollbackTitle')} onclose={() => { rollbackModal = null; snapshots = []; }}>
+	<Modal title={$t('containers.rollbackTitle')} onclose={() => { rollbackModal = null; snapshots = []; diffData = null; }}>
 		<div class="space-y-3">
 			<p class="text-sm text-secondary">{$t('containers.rollbackDesc')}</p>
 			<p class="text-sm font-medium text-primary">{rollbackModal.name}</p>
@@ -691,6 +701,11 @@
 									<div class="text-[10px] text-muted mt-0.5">{formatDateTime(snap.created_at)}</div>
 								</div>
 								<div class="flex items-center gap-1.5 shrink-0">
+									{#if snapshots.length >= 2}
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-muted hover:text-[var(--accent)] hover:border-[var(--accent)] transition" onclick={() => showDiff(snap.id)} title={$t('containers.compare')}>
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+										</button>
+									{/if}
 									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" onclick={() => doRollback(snap.id)} title={$t('containers.rollbackTo')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg>
 									</button>
@@ -701,6 +716,27 @@
 							</div>
 						</div>
 					{/each}
+				</div>
+			{/if}
+			{#if diffData}
+				<div class="mt-3 border-t border-theme pt-3">
+					<div class="flex items-center justify-between mb-2">
+						<h4 class="text-xs font-semibold text-primary">{$t('containers.changes')} ({diffData.changes.length})</h4>
+						<button class="text-[10px] text-muted hover:text-primary" onclick={() => diffData = null}>{$t('common.close')}</button>
+					</div>
+					{#if diffData.changes.length === 0}
+						<p class="text-xs text-muted">{$t('containers.noChanges')}</p>
+					{:else}
+						<div class="space-y-1.5 max-h-[200px] overflow-y-auto">
+							{#each diffData.changes as change}
+								<div class="text-[11px] bg-[var(--bg-0)] rounded p-2">
+									<span class="font-medium text-primary">{change.field}</span>
+									{#if change.old}<span class="text-[var(--red)] line-through ml-2">{change.old}</span>{/if}
+									{#if change.new}<span class="text-[var(--green)] ml-2">{change.new}</span>{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

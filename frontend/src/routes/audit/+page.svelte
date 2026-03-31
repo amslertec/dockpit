@@ -36,23 +36,43 @@
 		{ value: 'job_create', label: $t('audit.jobCreate') },
 		{ value: 'job_delete', label: $t('audit.jobDelete') },
 		{ value: 'container_migrate', label: $t('audit.containerMigrate') },
+		{ value: 'container_restart', label: $t('audit.containerRestart') },
+		{ value: 'container_remove', label: $t('audit.containerRemove') },
+		{ value: 'container_start', label: $t('audit.containerStart') },
+		{ value: 'container_stop', label: $t('audit.containerStop') },
+		{ value: 'container_rollback', label: $t('audit.containerRollback') },
+		{ value: 'backup_scheduled', label: $t('audit.backupScheduled') },
+		{ value: 'backup_create', label: $t('audit.backupCreate') },
+		{ value: 'template_create', label: $t('audit.templateCreate') },
+		{ value: 'login_blocked', label: $t('audit.loginBlocked') },
 	]);
 
 	onMount(() => {
 		loadEntries();
 	});
 
-	$effect(() => {
-		filterUser;
-		filterAction;
-		page = 1;
-		loadEntries();
-	});
+	let prevFilterUser = $state('');
+	let prevFilterAction = $state('');
+	let prevPage = $state(1);
+	let prevPerPage = $state(25);
 
 	$effect(() => {
-		page;
-		perPage;
-		loadEntries();
+		const filterChanged = filterUser !== prevFilterUser || filterAction !== prevFilterAction;
+		const pageChanged = page !== prevPage || perPage !== prevPerPage;
+
+		if (filterChanged) {
+			prevFilterUser = filterUser;
+			prevFilterAction = filterAction;
+			if (page !== 1) {
+				page = 1;
+				prevPage = 1;
+			}
+			loadEntries();
+		} else if (pageChanged) {
+			prevPage = page;
+			prevPerPage = perPage;
+			loadEntries();
+		}
 	});
 
 	async function loadEntries() {
@@ -97,6 +117,15 @@
 			update_check: 'bg-[var(--yellow)]/15 text-[var(--yellow)] border border-[var(--yellow)]/25',
 			job_create: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
 			job_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			container_restart: 'bg-[var(--yellow)]/15 text-[var(--yellow)] border border-[var(--yellow)]/25',
+			container_remove: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			container_start: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			container_stop: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			container_rollback: 'bg-[var(--yellow)]/15 text-[var(--yellow)] border border-[var(--yellow)]/25',
+			backup_scheduled: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			backup_create: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
+			template_create: 'bg-[var(--purple)]/15 text-[var(--purple)] border border-[var(--purple)]/25',
+			login_blocked: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
 		};
 		return map[action] || 'bg-[var(--bg-hover)] text-[var(--text-secondary)] border border-[var(--border)]';
 	}
@@ -121,6 +150,15 @@
 			job_create: 'audit.jobCreate',
 			job_delete: 'audit.jobDelete',
 			container_migrate: 'audit.containerMigrate',
+			container_restart: 'audit.containerRestart',
+			container_remove: 'audit.containerRemove',
+			container_start: 'audit.containerStart',
+			container_stop: 'audit.containerStop',
+			container_rollback: 'audit.containerRollback',
+			backup_scheduled: 'audit.backupScheduled',
+			backup_create: 'audit.backupCreate',
+			template_create: 'audit.templateCreate',
+			login_blocked: 'audit.loginBlocked',
 		};
 		const key = keyMap[action];
 		if (key) {
