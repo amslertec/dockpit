@@ -153,10 +153,9 @@
 				{/if}
 				{$t('volumes.pruneUnused')}
 			</Button>
-			<button onclick={load} title={$t('common.refresh')}
-				class="inline-flex items-center justify-center w-8 h-8 border border-theme text-secondary hover:text-primary hover:border-light rounded-[var(--radius-md)] transition">
+			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-			</button>
+			</Button>
 		</div>
 	</div>
 
@@ -206,10 +205,10 @@
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 										</button>
 									{:else}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('common.delete')} onclick={() => remove(v.name)}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('common.delete')} onclick={() => remove(v.name)}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 										</button>
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--red)]/30 text-red hover:bg-red-light transition" title={$t('images.forceDelete')} onclick={() => remove(v.name, true)}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('images.forceDelete')} onclick={() => remove(v.name, true)}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
 										</button>
 									{/if}

@@ -263,7 +263,7 @@
 
 						<div class="flex gap-2">
 							<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
-							<Button variant="secondary" size="md" onclick={testWebhook} loading={testingWebhook}>{$t('settings.testWebhook')}</Button>
+							<Button variant="warning" size="md" onclick={testWebhook} loading={testingWebhook}>{$t('settings.testWebhook')}</Button>
 						</div>
 					{/if}
 				</div>
@@ -340,7 +340,7 @@
 
 					<div class="flex gap-2">
 						<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
-						<Button variant="secondary" size="md" onclick={createBackup} loading={creatingBackup}>{$t('settings.backupNow')}</Button>
+						<Button variant="success" size="md" onclick={createBackup} loading={creatingBackup}>{$t('settings.backupNow')}</Button>
 					</div>
 				</div>
 
@@ -368,9 +368,15 @@
 											<td class="px-3 py-2.5 text-secondary">{formatDateTime(b.created_at)}</td>
 											<td class="px-4 py-2.5 text-right">
 												<div class="flex items-center justify-end gap-1">
-													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--accent)] hover:bg-[var(--accent-bg)] transition" onclick={() => downloadBackup(b.filename)}>{$t('settings.backupDownload')}</button>
-													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--purple)] hover:bg-purple-light transition" onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; restoreBackup(b.filename); } }}>{$t('settings.backupRestore')}</button>
-													<button class="px-2 py-1 text-[10px] font-medium rounded border border-theme text-[var(--red)] hover:bg-[var(--red-bg)] transition" onclick={() => confirm = { message: $t('settings.backupDeleteConfirm'), action: () => { confirm = null; deleteBackup(b.filename); } }}>{$t('settings.backupDelete')}</button>
+													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" title={$t('settings.backupDownload')} onclick={() => downloadBackup(b.filename)}>
+															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+														</button>
+													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" title={$t('settings.backupRestore')} onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; restoreBackup(b.filename); } }}>
+															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg>
+														</button>
+													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('settings.backupDelete')} onclick={() => confirm = { message: $t('settings.backupDeleteConfirm'), action: () => { confirm = null; deleteBackup(b.filename); } }}>
+															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+														</button>
 												</div>
 											</td>
 										</tr>
@@ -386,7 +392,7 @@
 					<h4 class="text-xs font-semibold text-primary mb-2">{$t('settings.backupUpload')}</h4>
 					<p class="text-[10px] text-muted mb-3">{$t('settings.backupUploadDesc')}</p>
 					<div class="flex items-center gap-3">
-						<input type="file" accept=".db" class="text-xs text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-theme file:text-xs file:font-medium file:bg-[var(--bg-1)] file:text-primary hover:file:bg-[var(--bg-hover)] file:transition file:cursor-pointer" onchange={(e) => { const t = e.target as HTMLInputElement; uploadFile = t.files?.[0] || null; }} />
+						<input type="file" accept=".db" class="text-xs text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-[var(--purple)]/40 file:text-xs file:font-medium file:bg-[var(--purple)]/8 file:text-[var(--purple)] hover:file:bg-[var(--purple)]/15 file:transition file:cursor-pointer" onchange={(e) => { const t = e.target as HTMLInputElement; uploadFile = t.files?.[0] || null; }} />
 						{#if uploadFile}
 							<Button variant="danger" size="sm" onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; handleUploadRestore(); } }}>{$t('settings.backupRestore')}</Button>
 						{/if}
@@ -405,7 +411,7 @@
 		<div class="bg-card border border-theme rounded-xl p-6 max-w-sm w-full shadow-xl">
 			<p class="text-sm text-primary mb-4">{confirm.message}</p>
 			<div class="flex justify-end gap-2">
-				<Button variant="secondary" size="sm" onclick={() => confirm = null}>{$t('common.cancel')}</Button>
+				<Button variant="success" size="sm" onclick={() => confirm = null}>{$t('common.cancel')}</Button>
 				<Button variant="danger" size="sm" onclick={confirm.action}>{$t('common.confirm')}</Button>
 			</div>
 		</div>

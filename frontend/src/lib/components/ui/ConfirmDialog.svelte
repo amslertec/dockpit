@@ -21,7 +21,7 @@
 		<h3 class="text-[15px] font-semibold text-[var(--text)] mb-2">{title || $t('common.confirm')}</h3>
 		<p class="text-sm text-[var(--text-secondary)] mb-5">{message}</p>
 		<div class="flex justify-end gap-2">
-			<Button variant="secondary" size="sm" onclick={oncancel}>{cancelText || $t('common.cancel')}</Button>
+			<Button variant="success" size="sm" onclick={oncancel}>{cancelText || $t('common.cancel')}</Button>
 			<Button variant={danger ? 'danger' : 'primary'} size="sm" onclick={onconfirm}>{confirmText || $t('common.confirm')}</Button>
 		</div>
 	</div>

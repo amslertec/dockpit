@@ -145,7 +145,7 @@
 				{status.running ? $t('updates.checkRunning') : $t('updates.checkNow')}
 			</Button>
 			{#if results.length > 0 && !status.running}
-				<Button variant="secondary" size="sm" onclick={clearReport}>{$t('updates.clearReport')}</Button>
+				<Button variant="danger" size="sm" onclick={clearReport}>{$t('updates.clearReport')}</Button>
 			{/if}
 		</div>
 	</div>

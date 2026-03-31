@@ -132,7 +132,7 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between mb-3 flex-wrap gap-3">
 		<div class="flex items-center gap-3">
-			<a href={backHref} class="w-8 h-8 flex items-center justify-center rounded-md border border-theme text-secondary hover:text-primary hover:border-light transition">
+			<a href={backHref} class="w-8 h-8 flex items-center justify-center rounded-md border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition">
 				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
 			</a>
 			<div>
@@ -174,14 +174,14 @@
 
 			<!-- Download -->
 			<button onclick={downloadLogs}
-				class="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-theme text-secondary hover:text-primary hover:border-light rounded-md text-xs transition">
+				class="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 rounded-md text-xs transition">
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 				{$t('logs.download')}
 			</button>
 
 			<!-- Manual refresh -->
 			<button onclick={fetchLogs}
-				class="inline-flex items-center justify-center w-8 h-8 border border-theme text-secondary hover:text-primary hover:border-light rounded-md transition">
+				class="inline-flex items-center justify-center w-8 h-8 border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 rounded-md transition">
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 			</button>
 		</div>

@@ -1244,6 +1244,12 @@ pub async fn env_recreate_container(
         let cname = inspect.name.as_ref().map(|n| n.trim_start_matches('/').to_string()).unwrap_or_else(|| container_id[..12.min(container_id.len())].to_string());
         state.db.log_audit(&audit_user(&headers), "container_recreate", Some(&cname), Some(&format!("Server: {}", server)));
 
+        // Save snapshot before recreate
+        let snap_image = inspect.config.as_ref().and_then(|c| c.image.clone()).unwrap_or_default();
+        let snap_json = serde_json::to_string(&inspect).unwrap_or_default();
+        tracing::info!("Saving snapshot for '{}' (image: {}, json_len: {})", cname, snap_image, snap_json.len());
+        state.db.save_container_snapshot(&env_id, &cname, &snap_image, &snap_json);
+
         let stack_name = inspect.config.as_ref()
             .and_then(|c| c.labels.as_ref())
             .and_then(|l| l.get("com.docker.compose.project"))
@@ -1298,9 +1304,9 @@ pub async fn env_recreate_container(
             }
         }
 
-        // Standalone container: use Docker API to recreate
+        // Standalone container: use Docker API to recreate (snapshot already saved above)
         match state.docker.recreate_container(&container_id).await {
-            Ok(msg) => {
+            Ok((msg, _snap_name, _snap_json)) => {
                 state.db.mark_container_updated(&cname);
                 Json(ApiResponse::ok(msg))
             }
@@ -1308,6 +1314,24 @@ pub async fn env_recreate_container(
         }
     } else {
         let client = reqwest::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
+
+        // Save snapshot from remote agent before recreate
+        let inspect_url = format!("{}/api/containers/{}/inspect", env.url, container_id);
+        if let Ok(resp) = client.get(&inspect_url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).send().await {
+            if let Ok(inspect_resp) = resp.json::<ApiResponse<serde_json::Value>>().await {
+                if let Some(inspect_data) = inspect_resp.data {
+                    let snap_name = inspect_data.get("Name").and_then(|n| n.as_str()).unwrap_or("").trim_start_matches('/').to_string();
+                    let snap_image = inspect_data.get("Config").and_then(|c| c.get("Image")).and_then(|i| i.as_str()).unwrap_or("").to_string();
+                    let snap_json = serde_json::to_string(&inspect_data).unwrap_or_default();
+                    if !snap_name.is_empty() {
+                        tracing::info!("Saving remote snapshot for '{}' (image: {})", snap_name, snap_image);
+                        state.db.save_container_snapshot(&env_id, &snap_name, &snap_image, &snap_json);
+                        state.db.log_audit(&audit_user(&headers), "container_recreate", Some(&snap_name), Some(&format!("Server: {}", server)));
+                    }
+                }
+            }
+        }
+
         let url = format!("{}/api/containers/{}/recreate", env.url, container_id);
         match client.post(&url).header("X-Agent-Token", env.agent_token.as_deref().unwrap_or("")).json(&()).send().await {
             Ok(resp) => match resp.json::<ApiResponse<String>>().await {
@@ -1433,6 +1457,66 @@ pub async fn env_migrate_container(
         target_name,
         if req.stop_source { format!(". Container auf {} gestoppt", source_name) } else { String::new() }
     )))
+}
+
+// === Container Rollback ===
+
+pub async fn get_container_snapshots(
+    State(state): State<Arc<AppState>>,
+    Path(container_name): Path<String>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    let snapshots = state.db.get_container_snapshots(&container_name);
+    let result: Vec<serde_json::Value> = snapshots.iter().map(|(id, _env_id, image, _json, created_at)| {
+        serde_json::json!({
+            "id": id,
+            "image": image,
+            "created_at": created_at,
+        })
+    }).collect();
+    Json(ApiResponse::ok(result))
+}
+
+pub async fn rollback_container(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path((env_id, container_id)): Path<(String, String)>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let snapshot_id = match req.get("snapshot_id").and_then(|v| v.as_i64()) {
+        Some(id) => id,
+        None => return Json(ApiResponse::err("snapshot_id fehlt")),
+    };
+
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+
+    let (container_name, image, config_json) = match state.db.get_snapshot_by_id(snapshot_id) {
+        Some(s) => s,
+        None => return Json(ApiResponse::err("Snapshot nicht gefunden")),
+    };
+
+    if !env.is_local {
+        return Json(ApiResponse::err("Rollback ist nur für lokale Container verfügbar"));
+    }
+
+    state.db.log_audit(&audit_user(&headers), "container_rollback", Some(&container_name), Some(&format!("→ {}", image)));
+
+    match state.docker.rollback_container(&container_id, &config_json).await {
+        Ok(msg) => Json(ApiResponse::ok(msg)),
+        Err(e) => Json(ApiResponse::err(e)),
+    }
+}
+
+pub async fn delete_snapshot(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_snapshot(id) {
+        Ok(_) => Json(ApiResponse::ok("Snapshot gelöscht".to_string())),
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
 }
 
 // === Stack Migration ===

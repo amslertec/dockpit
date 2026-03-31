@@ -94,13 +94,13 @@
 		{/if}
 
 		<!-- Search (Ctrl+K) -->
-		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all duration-200" aria-label="Search" title="Search (Ctrl+K)" onclick={onsearch}>
+		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition-all duration-200" aria-label="Search" title="Search (Ctrl+K)" onclick={onsearch}>
 			<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 		</button>
 
 		<!-- Notifications -->
 		<div class="relative">
-			<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all duration-200 relative"
+			<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition-all duration-200 relative"
 				aria-label="Notifications" onclick={(e) => { e.stopPropagation(); showNotifications = !showNotifications; }}>
 				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
 				{#if unreadCount > 0}
@@ -113,7 +113,7 @@
 		</div>
 
 		<!-- Language toggle with flags -->
-		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] hover:border-[var(--border-light)] transition-all duration-200 text-base leading-none" aria-label="Language" onclick={() => locale.toggle()} title={$locale === 'en' ? 'Deutsch' : 'English'}>
+		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition-all duration-200 text-base leading-none" aria-label="Language" onclick={() => locale.toggle()} title={$locale === 'en' ? 'Deutsch' : 'English'}>
 			{#if $locale === 'en'}
 				<svg class="w-5 h-5" viewBox="0 0 36 36"><path fill="#FFCD05" d="M0 27a4 4 0 004 4h28a4 4 0 004-4v-3H0v3z"/><path fill="#ED1F24" d="M0 12h36v12H0z"/><path fill="#141414" d="M32 5H4a4 4 0 00-4 4v3h36V9a4 4 0 00-4-4z"/></svg>
 			{:else}
@@ -122,7 +122,7 @@
 		</button>
 
 		<!-- Theme toggle -->
-		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-glow)] transition-all duration-300" aria-label={$t('topbar.theme')} onclick={() => theme.toggle()}>
+		<button class="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] {$theme === 'dark' ? 'text-amber-300 hover:border-amber-300/40 hover:bg-amber-300/8' : 'text-indigo-400 hover:border-indigo-400/40 hover:bg-indigo-400/8'} transition-all duration-300" aria-label={$t('topbar.theme')} onclick={() => theme.toggle()}>
 			{#if $theme === 'dark'}
 				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
 			{:else}

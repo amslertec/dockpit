@@ -398,7 +398,7 @@
 			{#if editMode}
 				<!-- Edit mode toolbar -->
 				<div class="relative" id="add-widget-anchor">
-					<Button variant="secondary" size="sm" onclick={(e) => { e.stopPropagation(); showAddMenu = !showAddMenu; positionAddMenu(); }} title={$t('home.addWidget')}>
+					<Button variant="success" size="sm" onclick={(e) => { e.stopPropagation(); showAddMenu = !showAddMenu; positionAddMenu(); }} title={$t('home.addWidget')}>
 						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 						<span class="hidden md:inline">{$t('home.addWidget')}</span>
 					</Button>
@@ -439,15 +439,15 @@
 						</div>
 					{/if}
 				</div>
-				<Button variant="secondary" size="sm" onclick={resetLayout} title={$t('home.resetLayout')}>
+				<Button variant="danger" size="sm" onclick={resetLayout} title={$t('home.resetLayout')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 					<span class="hidden md:inline">{$t('home.resetLayout')}</span>
 				</Button>
-				<Button variant="secondary" size="sm" onclick={handleExport} title={$t('dashboard.export')}>
+				<Button variant="primary" size="sm" onclick={handleExport} title={$t('dashboard.export')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 					<span class="hidden lg:inline">{$t('dashboard.export')}</span>
 				</Button>
-				<Button variant="secondary" size="sm" onclick={() => importFileEl?.click()} title={$t('dashboard.import')}>
+				<Button variant="warning" size="sm" onclick={() => importFileEl?.click()} title={$t('dashboard.import')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
 					<span class="hidden lg:inline">{$t('dashboard.import')}</span>
 				</Button>
@@ -457,7 +457,7 @@
 					<span class="hidden md:inline">{$t('home.saveLayout')}</span>
 				</Button>
 			{:else}
-				<Button variant="secondary" size="sm" onclick={toggleEditMode} title={$t('home.editMode')}>
+				<Button variant="purple" size="sm" onclick={toggleEditMode} title={$t('home.editMode')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 					<span class="hidden md:inline">{$t('home.editMode')}</span>
 				</Button>

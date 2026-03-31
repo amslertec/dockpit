@@ -209,12 +209,13 @@ impl DockerClient {
     }
 
     /// Recreate a container: pull latest image, stop old, create new with same config, start, remove old
-    pub async fn recreate_container(&self, id: &str) -> Result<String, String> {
+    pub async fn recreate_container(&self, id: &str) -> Result<(String, String, String), String> {
         use bollard::container::CreateContainerOptions;
 
         // 1. Inspect
         let inspect = self.docker.inspect_container(id, None).await
             .map_err(|e| format!("Inspect: {}", e))?;
+        let inspect_json = serde_json::to_string(&inspect).unwrap_or_default();
         let config = inspect.config.ok_or("Keine Config")?;
         let image = config.image.clone().unwrap_or_default();
         let name = inspect.name.unwrap_or_default().trim_start_matches('/').to_string();
@@ -275,7 +276,76 @@ impl DockerClient {
         self.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
             .map_err(|e| format!("Start: {}", e))?;
 
-        Ok(format!("Container '{}' neu erstellt mit aktuellem Image", name))
+        Ok((format!("Container '{}' neu erstellt mit aktuellem Image", name), name, inspect_json))
+    }
+
+    /// Rollback a container to a previous snapshot (same as recreate but with specific image + config)
+    pub async fn rollback_container(&self, current_id: &str, snapshot_json: &str) -> Result<String, String> {
+        use bollard::container::CreateContainerOptions;
+
+        let inspect: bollard::models::ContainerInspectResponse = serde_json::from_str(snapshot_json)
+            .map_err(|e| format!("Snapshot ungültig: {}", e))?;
+
+        let config = inspect.config.ok_or("Keine Config im Snapshot")?;
+        let image = config.image.clone().unwrap_or_default();
+        let name = inspect.name.unwrap_or_default().trim_start_matches('/').to_string();
+        let host_config = inspect.host_config;
+
+        // Pull the old image (might still be local)
+        self.pull_image(&image).await.ok(); // Ignore pull errors - image might be local only
+
+        // Stop and remove current container
+        let _ = self.docker.stop_container(current_id, Some(bollard::container::StopContainerOptions { t: 10 })).await;
+        self.docker.remove_container(current_id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await
+            .map_err(|e| format!("Remove: {}", e))?;
+
+        // Recreate with snapshot config
+        let create_opts = CreateContainerOptions { name: name.clone(), ..Default::default() };
+        let networking_config = inspect.network_settings
+            .and_then(|ns| ns.networks)
+            .map(|nets| {
+                let endpoints: HashMap<String, bollard::models::EndpointSettings> = nets.into_iter().map(|(k, v)| {
+                    (k, bollard::models::EndpointSettings {
+                        aliases: v.aliases,
+                        network_id: v.network_id,
+                        ..Default::default()
+                    })
+                }).collect();
+                bollard::container::NetworkingConfig { endpoints_config: endpoints }
+            });
+
+        let body = bollard::container::Config {
+            image: Some(image.clone()),
+            hostname: config.hostname,
+            domainname: config.domainname,
+            user: config.user,
+            env: config.env,
+            cmd: config.cmd,
+            entrypoint: config.entrypoint,
+            working_dir: config.working_dir,
+            labels: config.labels,
+            exposed_ports: config.exposed_ports,
+            volumes: config.volumes,
+            tty: config.tty,
+            open_stdin: config.open_stdin,
+            stdin_once: config.stdin_once,
+            attach_stdin: config.attach_stdin,
+            attach_stdout: config.attach_stdout,
+            attach_stderr: config.attach_stderr,
+            stop_signal: config.stop_signal,
+            healthcheck: config.healthcheck,
+            host_config: host_config,
+            networking_config,
+            ..Default::default()
+        };
+
+        let created = self.docker.create_container(Some(create_opts), body).await
+            .map_err(|e| format!("Create: {}", e))?;
+
+        self.docker.start_container(&created.id, None::<bollard::container::StartContainerOptions<String>>).await
+            .map_err(|e| format!("Start: {}", e))?;
+
+        Ok(format!("Container '{}' zurückgesetzt auf Image '{}'", name, image))
     }
 
     pub async fn create_exec(

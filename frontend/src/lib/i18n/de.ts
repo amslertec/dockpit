@@ -121,6 +121,13 @@ export const de: Record<string, string> = {
 	'containers.migrateStopSource': 'Container auf Quell-Server nach Migration stoppen',
 	'containers.migrateStart': 'Migration starten',
 	'containers.migrated': 'Migration erfolgreich abgeschlossen',
+	'containers.rollback': 'Rollback',
+	'containers.rollbackTitle': 'Container Rollback',
+	'containers.rollbackDesc': 'Container auf eine frühere Version zurücksetzen:',
+	'containers.rollbackTo': 'Wiederherstellen',
+	'containers.rollbackSuccess': 'Container erfolgreich zurückgesetzt',
+	'containers.noSnapshots': 'Keine Snapshots vorhanden. Snapshots werden automatisch vor jedem Recreate erstellt.',
+	'containers.snapshotDeleted': 'Snapshot gelöscht',
 
 	// === Images ===
 	'images.title': 'Images',

@@ -4,7 +4,7 @@
 	import { api } from '$lib/api/client';
 	import type { NotificationInfo } from '$lib/api/types';
 	import { formatTimeAgo } from '$lib/utils/format';
-	import Button from './Button.svelte';
+
 
 	interface Props {
 		onclose: () => void;
@@ -64,7 +64,10 @@
 	<!-- Header -->
 	<div class="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
 		<span class="text-sm font-semibold text-[var(--text)]">{$t('notifications.title')}</span>
-		<Button size="xs" variant="ghost" onclick={markAllAsRead}>{$t('notifications.markAllRead')}</Button>
+		<button
+			class="text-[11px] font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors duration-150 cursor-pointer"
+			onclick={markAllAsRead}
+		>{$t('notifications.markAllRead')}</button>
 	</div>
 
 	<!-- List -->

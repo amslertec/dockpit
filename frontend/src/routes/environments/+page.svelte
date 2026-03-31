@@ -263,11 +263,11 @@
 										<td class="px-4 py-2.5 text-xs text-secondary">{env.is_local ? $t('env.local') : $t('env.agent')}</td>
 										<td class="px-4 py-2.5">
 											<div class="flex gap-1">
-												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" title={$t('common.edit')} onclick={() => openEdit(env)}>
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" title={$t('common.edit')} onclick={() => openEdit(env)}>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 												</button>
 												{#if !env.is_local}
-													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('common.delete')} onclick={() => removeServer(env.id)}>
+													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('common.delete')} onclick={() => removeServer(env.id)}>
 														<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 													</button>
 												{/if}
@@ -397,7 +397,7 @@
 											</td>
 											<td class="px-4 py-2.5 text-xs text-secondary">{reg.username}</td>
 											<td class="px-4 py-2.5">
-												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('nav.logout')} onclick={() => removeRegistry(reg.registry)}>
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('nav.logout')} onclick={() => removeRegistry(reg.registry)}>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 												</button>
 											</td>
@@ -484,10 +484,10 @@
 										<td class="px-4 py-2.5">
 											<div class="flex items-center gap-2">
 												<CustomCheckbox checked={job.enabled} onchange={(val) => toggleJob(job.id, val)} size="sm" />
-												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" title={$t('jobs.runNow')} onclick={() => runJob(job.id)}>
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" title={$t('jobs.runNow')} onclick={() => runJob(job.id)}>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
 												</button>
-												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('common.delete')} onclick={() => deleteJob(job.id)}>
+												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('common.delete')} onclick={() => deleteJob(job.id)}>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 												</button>
 											</div>
@@ -513,7 +513,7 @@
 				{#if editEnv?.is_local}<p class="text-[10px] text-muted mt-1">{$t('env.localSocket')}</p>{/if}
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="secondary" size="sm" onclick={() => editEnv = null}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => editEnv = null}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit" loading={editSaving}>{editSaving ? $t('common.saving') : $t('common.save')}</Button>
 			</div>
 		</form>
@@ -566,7 +566,7 @@
 				</div>
 			{/if}
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="secondary" size="sm" onclick={() => showAddJob = false}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => showAddJob = false}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit" loading={creatingJob}>{creatingJob ? $t('common.loading') : $t('common.create')}</Button>
 			</div>
 		</form>

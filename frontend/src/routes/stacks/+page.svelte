@@ -269,7 +269,7 @@
 		<div class="flex items-center gap-2">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
-			<Button variant="secondary" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
+			<Button variant="purple" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
 				<span class="hidden md:inline">{$t('templates.fromTemplate')}</span>
 			</Button>
@@ -277,10 +277,9 @@
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 				<span class="hidden md:inline">{$t('stacks.newStack')}</span>
 			</Button>
-			<button onclick={load} title={$t('common.refresh')}
-				class="inline-flex items-center justify-center w-8 h-8 border border-theme text-secondary hover:text-primary hover:border-light rounded-md transition">
+			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-			</button>
+			</Button>
 		</div>
 	</div>
 
@@ -313,19 +312,19 @@
 							<td class="px-4 py-3">
 								<div class="flex gap-1">
 									{#if s.status !== 'running'}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--green)] hover:border-[var(--green)] transition" onclick={() => deploy(s.name)} title={$t('stacks.deploy')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition" onclick={() => deploy(s.name)} title={$t('stacks.deploy')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
 									{:else}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--yellow)] hover:border-[var(--yellow)] transition" onclick={() => stop(s.name)} title={$t('containers.stop')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => stop(s.name)} title={$t('containers.stop')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
 									{/if}
-									<a href="/stacks/{s.name}" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition no-underline" title={$t('common.edit')}>
+									<a href="/stacks/{s.name}" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition no-underline" title={$t('common.edit')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
 									{#if $canManageDocker}
-									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" onclick={() => migrateStack = s.name} title={$t('stacks.migrate')}>
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => migrateStack = s.name} title={$t('stacks.migrate')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
 									{/if}
-									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" onclick={() => remove(s.name)} title={$t('common.delete')}>
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => remove(s.name)} title={$t('common.delete')}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
 								</div>
 							</td>
@@ -383,12 +382,12 @@
 		</div>
 
 		<div class="flex items-center justify-between mt-4">
-			<Button variant="secondary" size="sm" onclick={() => { showSaveTemplate = true; }}>
+			<Button variant="purple" size="sm" onclick={() => { showSaveTemplate = true; }}>
 				<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
 				{$t('templates.saveAsTemplate')}
 			</Button>
 			<div class="flex gap-2">
-				<Button variant="secondary" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" onclick={create} loading={saving}>{$t('stacks.createStack')}</Button>
 			</div>
 		</div>
@@ -397,7 +396,7 @@
 
 <!-- Template Selector Modal -->
 {#if showTemplates}
-	<Modal title={$t('templates.selectTemplate')} onclose={() => showTemplates = false}>
+	<Modal title={$t('templates.selectTemplate')} onclose={() => showTemplates = false} wide>
 		{#if templates.length === 0}
 			<div class="text-center py-10 text-sm text-muted">{$t('templates.noTemplates')}</div>
 		{:else}
@@ -409,7 +408,7 @@
 					>
 						{#if !tpl.is_default}
 							<button
-								class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-muted hover:text-[var(--red)] hover:border-[var(--red)] opacity-0 group-hover:opacity-100 transition-all z-10"
+								class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 opacity-0 group-hover:opacity-100 transition-all z-10"
 								onclick={(e) => { e.stopPropagation(); confirmDlg = { message: $t('templates.confirmDelete'), action: () => { confirmDlg = null; deleteTemplate(tpl.id); } }; }}
 								title={$t('common.delete')}
 							>
@@ -436,11 +435,11 @@
 			</div>
 		{/if}
 		<div class="flex justify-between items-center mt-4 pt-3 border-t border-theme">
-			<Button variant="secondary" size="sm" onclick={() => { showCreateTemplate = true; }}>
+			<Button variant="success" size="sm" onclick={() => { showCreateTemplate = true; }}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 				{$t('templates.createCustom')}
 			</Button>
-			<Button variant="secondary" size="sm" onclick={() => showTemplates = false}>{$t('common.close')}</Button>
+			<Button variant="danger" size="sm" onclick={() => showTemplates = false}>{$t('common.close')}</Button>
 		</div>
 	</Modal>
 {/if}
@@ -486,7 +485,7 @@
 			</div>
 		</div>
 		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="secondary" size="sm" onclick={() => showCreateTemplate = false}>{$t('common.cancel')}</Button>
+			<Button variant="danger" size="sm" onclick={() => showCreateTemplate = false}>{$t('common.cancel')}</Button>
 			<Button variant="primary" size="sm" onclick={saveCustomTemplate}>{$t('common.create')}</Button>
 		</div>
 	</Modal>
@@ -500,7 +499,7 @@
 			<TextInput bind:value={saveTemplateDesc} label={$t('templates.templateDesc')} placeholder="A short description..." id="savetpldesc" />
 		</div>
 		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="secondary" size="sm" onclick={() => showSaveTemplate = false}>{$t('common.cancel')}</Button>
+			<Button variant="danger" size="sm" onclick={() => showSaveTemplate = false}>{$t('common.cancel')}</Button>
 			<Button variant="primary" size="sm" onclick={saveAsTemplate}>{$t('common.save')}</Button>
 		</div>
 	</Modal>

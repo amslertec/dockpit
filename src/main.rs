@@ -231,6 +231,7 @@ async fn main() {
         .route("/api/refresh", post(handlers::refresh_token))
         .route("/api/dashboard-config", get(handlers::get_dashboard_config))
         .route("/api/dashboard-config", put(handlers::save_dashboard_config))
+        .route("/api/snapshots/{container_name}", get(handlers::get_container_snapshots))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
@@ -253,6 +254,8 @@ async fn main() {
         .route("/api/env/{env_id}/containers/{container_id}/check-update", post(handlers::env_check_container_update))
         .route("/api/env/{env_id}/containers/{container_id}/recreate", post(handlers::env_recreate_container))
         .route("/api/env/{env_id}/containers/{container_id}/migrate", post(handlers::env_migrate_container))
+        .route("/api/env/{env_id}/containers/{container_id}/rollback", post(handlers::rollback_container))
+        .route("/api/snapshots/delete/{id}", delete(handlers::delete_snapshot))
         .route("/api/env/{env_id}/stacks/{name}/migrate", post(handlers::env_migrate_stack))
         .route("/api/env/{env_id}/images/pull", post(handlers::env_pull_image))
         .route("/api/env/{env_id}/images/prune", post(handlers::env_prune_images))

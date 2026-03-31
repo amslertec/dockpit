@@ -5,7 +5,7 @@
 	import { selectedEnv, environments } from '$lib/stores/environment';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { toasts } from '$lib/stores/toast';
-	import { formatPorts, truncateId, formatDate, extractHealth } from '$lib/utils/format';
+	import { formatPorts, truncateId, formatDate, formatDateTime, extractHealth } from '$lib/utils/format';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
@@ -33,6 +33,10 @@
 	let migrateStopSource = $state(true);
 	let migrating = $state(false);
 	let migrateDropdown = $state(false);
+
+	let rollbackModal = $state<{ id: string; name: string } | null>(null);
+	let snapshots = $state<{id: number; image: string; created_at: string}[]>([]);
+	let rollingBack = $state(false);
 
 	const migrateTargets = $derived(
 		$environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name }))
@@ -251,6 +255,33 @@
 			toasts.error(r.error || $t('common.error'));
 		}
 	}
+
+	async function loadSnapshots(name: string) {
+		const r = await api.get<{id: number; image: string; created_at: string}[]>(`/snapshots/${encodeURIComponent(name)}`);
+		if (r.success && r.data) snapshots = r.data;
+		else snapshots = [];
+	}
+
+	async function deleteSnapshot(snapshotId: number) {
+		const r = await api.del<string>(`/snapshots/delete/${snapshotId}`);
+		if (r.success) { snapshots = snapshots.filter(s => s.id !== snapshotId); toasts.success($t('containers.snapshotDeleted')); }
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function doRollback(snapshotId: number) {
+		if (!rollbackModal) return;
+		rollingBack = true;
+		const r = await api.post<string>(`/env/${$selectedEnv}/containers/${rollbackModal.id}/rollback`, { snapshot_id: snapshotId });
+		rollingBack = false;
+		if (r.success) {
+			toasts.success(r.data || $t('containers.rollbackSuccess'));
+			rollbackModal = null;
+			snapshots = [];
+			setTimeout(load, 1000);
+		} else {
+			toasts.error(r.error || $t('common.error'));
+		}
+	}
 </script>
 
 <svelte:head><title>DockPit — Container</title></svelte:head>
@@ -348,14 +379,13 @@
 		<h3 class="text-sm font-semibold text-primary">{$t('containers.title')} ({filtered.length})</h3>
 		<div class="flex items-center gap-2">
 			<input bind:value={search} placeholder={$t('common.search')} class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-40 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
-			{#if $canManageDocker}<button onclick={() => { for (const c of filtered) if (c.state === 'running') checkUpdate(c.id); }} title={$t('containers.checkUpdates')}
-				class="inline-flex items-center gap-1.5 border border-theme text-secondary hover:text-primary hover:border-light px-2.5 py-1.5 rounded-[var(--radius-md)] text-xs transition">
+			{#if $canManageDocker}<Button variant="warning" size="sm" onclick={() => { for (const c of filtered) if (c.state === 'running') checkUpdate(c.id); }} title={$t('containers.checkUpdates')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 				{$t('containers.checkUpdates')}
-			</button>{/if}
-			<button onclick={load} title={$t('common.refresh')} class="inline-flex items-center justify-center w-8 h-8 border border-theme text-secondary hover:text-primary hover:border-light rounded-[var(--radius-md)] transition">
+			</Button>{/if}
+			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-			</button>
+			</Button>
 		</div>
 	</div>
 
@@ -436,26 +466,28 @@
 									<!-- Start/Stop (editor+) -->
 									{#if $canEditContainers}
 										{#if c.state !== 'running'}
-											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(c.id, 'start')} title={$t('containers.start')}>
+											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition" onclick={() => action(c.id, 'start')} title={$t('containers.start')}>
 												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
 										{:else}
-											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(c.id, 'stop')} title={$t('containers.stop')}>
+											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => action(c.id, 'stop')} title={$t('containers.stop')}>
 												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
 										{/if}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(c.id, 'restart')} title={$t('containers.restart')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => action(c.id, 'restart')} title={$t('containers.restart')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/></svg></button>
 									{/if}
 									<!-- Recreate/Logs/Terminal/Delete (admin+) -->
 									{#if $canManageDocker}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:bg-purple-light hover:border-[var(--purple)] transition" onclick={() => recreate(c.id)} title={$t('containers.recreate')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" onclick={() => recreate(c.id)} title={$t('containers.recreate')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
-										<a href="/containers/{c.id}/logs" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition no-underline" title={$t('containers.logs')}>
+										<a href="/containers/{c.id}/logs" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition no-underline" title={$t('containers.logs')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></a>
-										<a href="/containers/{c.id}/terminal" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--green)] hover:border-[var(--green)] transition no-underline" title={$t('containers.terminal')}>
+										<a href="/containers/{c.id}/terminal" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition no-underline" title={$t('containers.terminal')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></a>
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" onclick={() => migrateModal = { id: c.id, name: c.name, image: c.image }} title={$t('containers.migrate')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--yellow)] hover:border-[var(--yellow)]/40 hover:bg-[var(--yellow)]/8 transition" onclick={async () => { rollbackModal = { id: c.id, name: c.name }; await loadSnapshots(c.name); }} title={$t('containers.rollback')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg></button>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => migrateModal = { id: c.id, name: c.name, image: c.image }} title={$t('containers.migrate')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" onclick={() => action(c.id, 'remove')} title={$t('containers.remove')}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => action(c.id, 'remove')} title={$t('containers.remove')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
 									{/if}
 								</div>
@@ -561,7 +593,7 @@
 		<div class="border border-[var(--border)] rounded-t-[var(--radius-xl)] sm:rounded-[var(--radius-xl)] w-full sm:max-w-lg shadow-[var(--shadow-lg)]" style="overflow:visible; background:var(--glass-bg); backdrop-filter:blur(20px) saturate(150%); -webkit-backdrop-filter:blur(20px) saturate(150%)">
 			<div class="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
 				<h3 class="text-[15px] font-semibold text-[var(--text)]">{$t('containers.migrateTitle')}</h3>
-				<button class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all" onclick={() => { migrateModal = null; migrateDropdown = false; }}>
+				<button class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition-all" onclick={() => { migrateModal = null; migrateDropdown = false; }}>
 					<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
 			</div>
@@ -614,11 +646,44 @@
 				<CustomCheckbox checked={migrateStopSource} onchange={(v) => migrateStopSource = v} label={$t('containers.migrateStopSource')} />
 			</div>
 			<div class="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2">
-				<Button variant="secondary" size="sm" onclick={() => { migrateModal = null; migrateDropdown = false; }}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => { migrateModal = null; migrateDropdown = false; }}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" onclick={migrateContainer} loading={migrating} disabled={!migrateTarget}>{$t('containers.migrateStart')}</Button>
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if rollbackModal}
+	<Modal title={$t('containers.rollbackTitle')} onclose={() => { rollbackModal = null; snapshots = []; }}>
+		<div class="space-y-3">
+			<p class="text-sm text-secondary">{$t('containers.rollbackDesc')}</p>
+			<p class="text-sm font-medium text-primary">{rollbackModal.name}</p>
+			{#if snapshots.length === 0}
+				<div class="text-center py-6 text-sm text-muted">{$t('containers.noSnapshots')}</div>
+			{:else}
+				<div class="space-y-2 max-h-[300px] overflow-y-auto">
+					{#each snapshots as snap}
+						<div class="bg-[var(--bg-0)] border border-theme rounded-lg p-3">
+							<div class="flex items-center justify-between gap-3">
+								<div class="min-w-0 flex-1">
+									<div class="text-xs font-mono text-primary truncate">{snap.image}</div>
+									<div class="text-[10px] text-muted mt-0.5">{formatDateTime(snap.created_at)}</div>
+								</div>
+								<div class="flex items-center gap-1.5 shrink-0">
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" onclick={() => doRollback(snap.id)} title={$t('containers.rollbackTo')}>
+										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg>
+									</button>
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => deleteSnapshot(snap.id)} title={$t('common.delete')}>
+										<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+									</button>
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</Modal>
 {/if}
 
 {#if confirm}

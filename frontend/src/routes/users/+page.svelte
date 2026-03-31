@@ -174,16 +174,16 @@
 							<td class="px-4 py-3 text-xs text-secondary hidden md:table-cell">{u.created_at?.substring(0, 10) || '—'}</td>
 							<td class="px-4 py-3">
 								<div class="flex gap-1">
-									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" title={$t('common.edit')} onclick={() => openEdit(u)}>
+									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" title={$t('common.edit')} onclick={() => openEdit(u)}>
 										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 									</button>
 									{#if u.totp_enabled}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--yellow)] hover:border-[var(--yellow)] transition" title={$t('users.reset2FA')} onclick={() => resetMfa(u)}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--yellow)] hover:border-[var(--yellow)]/40 hover:bg-[var(--yellow)]/8 transition" title={$t('users.reset2FA')} onclick={() => resetMfa(u)}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
 										</button>
 									{/if}
 									{#if canDelete(u)}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" title={$t('common.delete')} onclick={() => deleteUser(u)}>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('common.delete')} onclick={() => deleteUser(u)}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 										</button>
 									{:else}
@@ -254,7 +254,7 @@
 				<CustomSelect options={roles.map(r => ({value: r.value, label: r.label + ' — ' + r.desc}))} value={newRole} onchange={(v) => newRole = String(v)} />
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="secondary" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => showCreate = false}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit" loading={creating}>{$t('common.create')}</Button>
 			</div>
 		</form>
@@ -271,7 +271,7 @@
 			</div>
 			<TextInput bind:value={editPass} type="password" label={$t('users.newPassword')} placeholder={$t('users.newPasswordHint')} id="ep" />
 			<div class="flex justify-end gap-2 pt-2">
-				<Button variant="secondary" size="sm" onclick={() => editUser = null}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => editUser = null}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" type="submit" loading={editSaving}>{$t('common.save')}</Button>
 			</div>
 		</form>

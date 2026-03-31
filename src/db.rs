@@ -182,6 +182,15 @@ impl Database {
                 last_message TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS container_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                env_id TEXT NOT NULL,
+                container_name TEXT NOT NULL,
+                image TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         ")?;
 
         // Indexes for frequently queried tables
@@ -195,6 +204,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
             CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
             CREATE INDEX IF NOT EXISTS idx_update_checks_env_id ON update_checks(env_id);
+            CREATE INDEX IF NOT EXISTS idx_container_snapshots_name ON container_snapshots(container_name);
         ")?;
 
         Ok(())
@@ -520,6 +530,46 @@ impl Database {
             "INSERT OR REPLACE INTO dashboard_configs (username, config_json, updated_at) VALUES (?1, ?2, datetime('now'))",
             params![username, config_json],
         )?;
+        Ok(())
+    }
+
+    // === Container Snapshots ===
+
+    pub fn save_container_snapshot(&self, env_id: &str, container_name: &str, image: &str, config_json: &str) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO container_snapshots (env_id, container_name, image, config_json) VALUES (?1, ?2, ?3, ?4)",
+            params![env_id, container_name, image, config_json],
+        ).ok();
+        // Keep only last 10 snapshots per container
+        conn.execute(
+            "DELETE FROM container_snapshots WHERE container_name = ?1 AND id NOT IN (SELECT id FROM container_snapshots WHERE container_name = ?1 ORDER BY id DESC LIMIT 10)",
+            params![container_name],
+        ).ok();
+    }
+
+    pub fn get_container_snapshots(&self, container_name: &str) -> Vec<(i64, String, String, String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, env_id, image, config_json, created_at FROM container_snapshots WHERE container_name = ?1 ORDER BY id DESC LIMIT 10"
+        ).unwrap();
+        stmt.query_map(params![container_name], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_snapshot_by_id(&self, id: i64) -> Option<(String, String, String)> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT container_name, image, config_json FROM container_snapshots WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).ok()
+    }
+
+    pub fn delete_snapshot(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM container_snapshots WHERE id = ?1", params![id])?;
         Ok(())
     }
 
