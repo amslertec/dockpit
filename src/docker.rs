@@ -49,6 +49,67 @@ impl DockerClient {
         Ok(Self { docker })
     }
 
+    /// Get the host's LAN subnets by inspecting Docker networks.
+    /// Runs a temporary alpine container with host networking to get real IPs.
+    pub async fn get_host_subnets(&self) -> Vec<String> {
+        use bollard::container::{Config, CreateContainerOptions, LogOutput};
+        use bollard::models::HostConfig;
+
+        let config = Config {
+            image: Some("alpine:3.21"),
+            cmd: Some(vec!["hostname", "-I"]),
+            host_config: Some(HostConfig {
+                network_mode: Some("host".to_string()),
+                auto_remove: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let name = format!("dockpit-probe-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+        let create_opts = CreateContainerOptions { name: name.as_str(), platform: None };
+
+        let container_id = match self.docker.create_container(Some(create_opts), config).await {
+            Ok(resp) => resp.id,
+            Err(_) => return vec![],
+        };
+
+        if self.docker.start_container::<String>(&container_id, None).await.is_err() {
+            self.docker.remove_container(&container_id, None).await.ok();
+            return vec![];
+        }
+
+        // Wait for container to finish
+        let mut wait = self.docker.wait_container::<String>(&container_id, None);
+        use futures_lite::StreamExt;
+        let _ = wait.next().await;
+
+        // Read logs
+        let mut output = String::new();
+        let mut logs = self.docker.logs::<String>(&container_id, Some(bollard::container::LogsOptions {
+            stdout: true, stderr: false, follow: false, ..Default::default()
+        }));
+        while let Some(Ok(log)) = logs.next().await {
+            if let LogOutput::StdOut { message } = log {
+                output.push_str(&String::from_utf8_lossy(&message));
+            }
+        }
+
+        self.docker.remove_container(&container_id, Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() })).await.ok();
+
+        let mut subnets = Vec::new();
+        for ip in output.split_whitespace() {
+            let parts: Vec<&str> = ip.split('.').collect();
+            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.starts_with("169.254.") && !ip.contains(':') {
+                let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+                if !subnets.contains(&subnet) {
+                    subnets.push(subnet);
+                }
+            }
+        }
+        subnets
+    }
+
     pub async fn list_containers(&self) -> Result<Vec<ContainerInfo>, bollard::errors::Error> {
         let mut filters = HashMap::new();
         filters.insert("status", vec!["running", "exited", "paused", "created", "restarting", "dead"]);

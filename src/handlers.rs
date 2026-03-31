@@ -2196,81 +2196,19 @@ pub async fn discover_agents(
 
     let mut subnets_to_scan: Vec<String> = Vec::new();
 
-    // Method 1: DOCKPIT_SCAN_SUBNET env var (explicit config)
-    if let Ok(subnet) = std::env::var("DOCKPIT_SCAN_SUBNET") {
-        let parts: Vec<&str> = subnet.trim().split('.').collect();
-        if parts.len() >= 3 {
-            subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
-        }
-    }
+    // Get host's real LAN subnets via Docker (runs temp container with host networking)
+    let docker_subnets = state.docker.get_host_subnets().await;
+    subnets_to_scan.extend(docker_subnets);
 
-    // Method 2: Resolve host.docker.internal (works with --add-host or Docker Desktop)
+    // Fallback: env var or common subnets
     if subnets_to_scan.is_empty() {
-        if let Ok(output) = tokio::process::Command::new("getent").args(["hosts", "host.docker.internal"]).output().await {
-            let out = String::from_utf8_lossy(&output.stdout);
-            if let Some(ip) = out.split_whitespace().next() {
-                let parts: Vec<&str> = ip.split('.').collect();
-                if parts.len() == 4 && !ip.starts_with("172.") {
-                    subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
-                }
+        if let Ok(subnet) = std::env::var("DOCKPIT_SCAN_SUBNET") {
+            let parts: Vec<&str> = subnet.trim().split('.').collect();
+            if parts.len() >= 3 {
+                subnets_to_scan.push(format!("{}.{}.{}", parts[0], parts[1], parts[2]));
             }
         }
     }
-
-    // Method 3: Read /proc/net/fib_trie for host IPs (works in Docker containers)
-    if subnets_to_scan.is_empty() {
-        if let Ok(content) = tokio::fs::read_to_string("/proc/net/fib_trie").await {
-            let mut prev_line = String::new();
-            for line in content.lines() {
-                let trimmed = line.trim();
-                // Look for /32 host local addresses
-                if trimmed.starts_with("|-- ") && prev_line.contains("/32 host LOCAL") {
-                    // This was the previous pattern; use the simpler approach below
-                }
-                // Actually parse the IPs directly after "LOCAL" markers
-                if prev_line.trim().ends_with("LOCAL") || prev_line.trim().contains("/32 host LOCAL") {
-                    if let Some(ip_str) = trimmed.strip_prefix("|-- ") {
-                        let parts: Vec<&str> = ip_str.split('.').collect();
-                        if parts.len() == 4 && ip_str != "127.0.0.1" && !ip_str.starts_with("172.") && !ip_str.starts_with("169.254.") {
-                            let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
-                            if !subnets_to_scan.contains(&subnet) {
-                                subnets_to_scan.push(subnet);
-                            }
-                        }
-                    }
-                }
-                prev_line = trimmed.to_string();
-            }
-        }
-    }
-
-    // Method 4: Parse all network interfaces from /proc/net/route
-    if subnets_to_scan.is_empty() {
-        if let Ok(content) = tokio::fs::read_to_string("/proc/net/route").await {
-            for line in content.lines().skip(1) {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() >= 8 {
-                    let iface = fields[0];
-                    let gateway = fields[2];
-                    // Find non-zero gateways on non-docker interfaces
-                    if gateway != "00000000" && !iface.starts_with("docker") && !iface.starts_with("br-") && !iface.starts_with("veth") {
-                        // Gateway is in hex (little-endian): e.g. "0101A8C0" = 192.168.1.1
-                        if let Ok(gw) = u32::from_str_radix(gateway, 16) {
-                            let a = (gw & 0xFF) as u8;
-                            let b = ((gw >> 8) & 0xFF) as u8;
-                            let c = ((gw >> 16) & 0xFF) as u8;
-                            let subnet = format!("{}.{}.{}", a, b, c);
-                            if !subnet.starts_with("172.") && !subnets_to_scan.contains(&subnet) {
-                                subnets_to_scan.push(subnet);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Method 5: Fallback to common private subnets
     if subnets_to_scan.is_empty() {
         subnets_to_scan.push("192.168.1".to_string());
         subnets_to_scan.push("192.168.0".to_string());
