@@ -555,59 +555,70 @@
 {/if}
 
 {#if migrateModal}
-	<Modal title={$t('containers.migrateTitle')} onclose={() => migrateModal = null}>
-		<div class="space-y-4">
-			<div>
-				<p class="text-sm text-secondary mb-1">{$t('containers.migrateContainer')}</p>
-				<p class="text-sm font-medium text-primary">{migrateModal.name}</p>
-				<p class="text-xs text-muted mt-0.5">{migrateModal.image}</p>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4" onclick={(e) => { if (e.target === e.currentTarget) { migrateModal = null; migrateDropdown = false; } }}>
+		<div class="border border-[var(--border)] rounded-t-[var(--radius-xl)] sm:rounded-[var(--radius-xl)] w-full sm:max-w-lg shadow-[var(--shadow-lg)]" style="overflow:visible; background:var(--glass-bg); backdrop-filter:blur(20px) saturate(150%); -webkit-backdrop-filter:blur(20px) saturate(150%)">
+			<div class="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+				<h3 class="text-[15px] font-semibold text-[var(--text)]">{$t('containers.migrateTitle')}</h3>
+				<button class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all" onclick={() => { migrateModal = null; migrateDropdown = false; }}>
+					<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				</button>
 			</div>
-			<div>
-				<label class="block text-xs font-medium text-secondary mb-1">{$t('containers.migrateTarget')}</label>
-				<div class="relative">
-					<button
-						class="w-full flex items-center gap-2 h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-0)] text-[var(--text)] hover:border-[var(--border-light)] transition-all cursor-pointer"
-						onclick={(e) => { e.stopPropagation(); migrateDropdown = !migrateDropdown; }}
-					>
-						{#if migrateTarget}
-							{@const env = $environments.find(e => e.id === migrateTarget)}
-							<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
-							<span class="truncate font-medium">{env?.name}</span>
-						{:else}
-							<span class="text-muted">{$t('containers.selectTarget')}</span>
-						{/if}
-						<svg class="w-3.5 h-3.5 text-muted shrink-0 ml-auto transition-transform {migrateDropdown ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-					</button>
-					{#if migrateDropdown}
-						<div class="absolute left-0 right-0 mt-1 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 py-1.5 overflow-hidden">
-							{#each migrateTargets as t}
-								{@const env = $environments.find(e => e.id === t.value)}
-								<button
-									class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
-									{t.value === migrateTarget ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
-									onclick={() => { migrateTarget = t.value; migrateDropdown = false; }}
-								>
-									<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
-									<span class="truncate font-medium">{t.label}</span>
-									{#if env?.is_local}
-										<span class="text-[9px] text-muted ml-auto px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">Local</span>
-									{/if}
-									{#if t.value === migrateTarget}
-										<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-									{/if}
-								</button>
-							{/each}
-						</div>
-					{/if}
+			<div class="p-5 space-y-4">
+				<div>
+					<p class="text-sm text-secondary mb-1">{$t('containers.migrateContainer')}</p>
+					<p class="text-sm font-medium text-primary">{migrateModal.name}</p>
+					<p class="text-xs text-muted mt-0.5">{migrateModal.image}</p>
 				</div>
+				<div>
+					<label class="block text-xs font-medium text-secondary mb-1">{$t('containers.migrateTarget')}</label>
+					<div class="relative">
+						<button
+							class="w-full flex items-center gap-2.5 h-9 px-3 text-xs rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-3)] text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all cursor-pointer"
+							onclick={(e) => { e.stopPropagation(); migrateDropdown = !migrateDropdown; }}
+						>
+							{#if migrateTarget}
+								{@const env = $environments.find(e => e.id === migrateTarget)}
+								<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)] shadow-[var(--shadow-glow-green)]' : 'bg-[var(--red)]'}"></span>
+								<span class="truncate font-medium">{env?.name}</span>
+							{:else}
+								<span class="text-muted">{$t('containers.selectTarget')}</span>
+							{/if}
+							<svg class="w-3.5 h-3.5 text-muted shrink-0 ml-auto transition-transform duration-200 {migrateDropdown ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+						</button>
+						{#if migrateDropdown}
+							<div class="absolute left-0 right-0 mt-1.5 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[1100] py-1.5">
+								<div class="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">{$t('containers.migrateTarget')}</div>
+								{#each migrateTargets as t}
+									{@const env = $environments.find(e => e.id === t.value)}
+									<button
+										class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
+										{t.value === migrateTarget ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
+										onclick={() => { migrateTarget = t.value; migrateDropdown = false; }}
+									>
+										<span class="w-2 h-2 rounded-full shrink-0 {env?.status === 'online' || env?.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
+										<span class="truncate font-medium">{t.label}</span>
+										{#if env?.is_local}
+											<span class="text-[9px] text-muted ml-auto px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">Local</span>
+										{/if}
+										{#if t.value === migrateTarget}
+											<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+										{/if}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+				<CustomCheckbox checked={migrateStopSource} onchange={(v) => migrateStopSource = v} label={$t('containers.migrateStopSource')} />
 			</div>
-			<CustomCheckbox checked={migrateStopSource} onchange={(v) => migrateStopSource = v} label={$t('containers.migrateStopSource')} />
+			<div class="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2">
+				<Button variant="secondary" size="sm" onclick={() => { migrateModal = null; migrateDropdown = false; }}>{$t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" onclick={migrateContainer} loading={migrating} disabled={!migrateTarget}>{$t('containers.migrateStart')}</Button>
+			</div>
 		</div>
-		{#snippet footer()}
-			<Button variant="secondary" size="sm" onclick={() => migrateModal = null}>{$t('common.cancel')}</Button>
-			<Button variant="primary" size="sm" onclick={migrateContainer} loading={migrating} disabled={!migrateTarget}>{$t('containers.migrateStart')}</Button>
-		{/snippet}
-	</Modal>
+	</div>
 {/if}
 
 {#if confirm}
