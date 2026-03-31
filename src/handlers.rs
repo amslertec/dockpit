@@ -2185,123 +2185,78 @@ pub async fn create_environment(
 
 pub async fn discover_agents(
     State(state): State<Arc<AppState>>,
-    Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Json<ApiResponse<Vec<serde_json::Value>>> {
     let mut results = Vec::new();
     let existing_urls: Vec<String> = state.db.get_environments().iter().map(|e| e.url.clone()).collect();
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(300))
+        .timeout(Duration::from_secs(3))
         .build()
         .unwrap();
 
-    let mut subnets_to_scan: Vec<String> = Vec::new();
-
-    // With network_mode: host, hostname -I returns the real host IPs
-    // Detect all host subnets and scan the full /16 range for each
-    let mut base_prefixes: Vec<String> = Vec::new();
-    // Known Docker bridge subnets to skip (Docker uses 172.17-31.x.x internally)
-    let docker_bridges: Vec<String> = {
-        let mut bridges = Vec::new();
-        if let Ok(output) = tokio::process::Command::new("ip").args(["addr", "show"]).output().await {
-            let out = String::from_utf8_lossy(&output.stdout);
-            let mut current_iface = String::new();
-            for line in out.lines() {
-                if !line.starts_with(' ') { current_iface = line.split(':').nth(1).unwrap_or("").trim().to_string(); }
-                if (current_iface.starts_with("docker") || current_iface.starts_with("br-") || current_iface.starts_with("veth"))
-                    && line.contains("inet ") {
-                    if let Some(ip_cidr) = line.split_whitespace().nth(1) {
-                        let ip = ip_cidr.split('/').next().unwrap_or("");
-                        let parts: Vec<&str> = ip.split('.').collect();
-                        if parts.len() == 4 {
-                            bridges.push(format!("{}.{}", parts[0], parts[1]));
-                        }
-                    }
-                }
+    // Read ARP table — contains all IPs this host has communicated with.
+    // Much faster than scanning entire subnets (dozens of IPs vs 65,000).
+    let mut ips_to_check: Vec<String> = Vec::new();
+    if let Ok(content) = tokio::fs::read_to_string("/proc/net/arp").await {
+        for line in content.lines().skip(1) {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() < 6 { continue; }
+            let ip = fields[0];
+            let device = fields[5];
+            // Skip Docker interfaces
+            if device.starts_with("docker") || device.starts_with("br-") || device.starts_with("veth") { continue; }
+            if !existing_urls.iter().any(|u| u.contains(ip)) {
+                ips_to_check.push(ip.to_string());
             }
         }
-        bridges.sort(); bridges.dedup(); bridges
-    };
+    }
 
+    // Also scan the host's own /24 subnet for agents not yet in ARP table
     if let Ok(output) = tokio::process::Command::new("hostname").arg("-I").output().await {
         let ips = String::from_utf8_lossy(&output.stdout);
         for ip in ips.split_whitespace() {
             let parts: Vec<&str> = ip.split('.').collect();
-            if parts.len() != 4 || ip.starts_with("127.") || ip.starts_with("169.254.") || ip.contains(':') { continue; }
-            let a = parts[0]; let b = parts[1];
-            let prefix = format!("{}.{}", a, b);
-            // Skip Docker bridge subnets
-            if docker_bridges.contains(&prefix) { continue; }
-            // Scan full /16 for every detected private subnet
-            if !base_prefixes.contains(&prefix) {
-                base_prefixes.push(prefix.clone());
-                for third in 0..=255u16 {
-                    subnets_to_scan.push(format!("{}.{}", prefix, third));
+            if parts.len() == 4 && !ip.starts_with("172.") && !ip.starts_with("127.") && !ip.contains(':') {
+                let subnet = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+                for i in 1..=254u8 {
+                    let candidate = format!("{}.{}", subnet, i);
+                    if !ips_to_check.contains(&candidate) && !existing_urls.iter().any(|u| u.contains(&candidate)) {
+                        ips_to_check.push(candidate);
+                    }
                 }
             }
         }
     }
 
-    // Extra subnet from query param (e.g. "10.10.20" or "10.10.20.0/24")
-    if let Some(extra) = query.get("extra_subnet") {
-        let s = extra.trim();
-        if !s.is_empty() {
-            let prefix = s.split('/').next().unwrap_or(s);
-            let parts: Vec<&str> = prefix.split('.').collect();
-            let subnet = if parts.len() == 4 {
-                format!("{}.{}.{}", parts[0], parts[1], parts[2])
-            } else if parts.len() == 3 {
-                s.to_string()
-            } else { String::new() };
-            if !subnet.is_empty() && !subnets_to_scan.contains(&subnet) {
-                subnets_to_scan.push(subnet);
-            }
-        }
-    }
+    ips_to_check.sort();
+    ips_to_check.dedup();
+    tracing::info!("Scanning {} IPs for agents (ARP + local subnet)", ips_to_check.len());
 
-    if subnets_to_scan.is_empty() {
-        subnets_to_scan.push("192.168.1".to_string());
-    }
-
-    subnets_to_scan.sort();
-    subnets_to_scan.dedup();
-
-    tracing::info!("Scanning subnets for agents: {:?}", subnets_to_scan);
-
-    // Scan each subnet in parallel
+    // Check all IPs in parallel — usually only a few dozen from ARP + 254 from local subnet
     let mut handles = Vec::new();
-    for subnet in &subnets_to_scan {
-        for i in 1..=254u8 {
-            let ip = format!("{}.{}", subnet, i);
-            let url = format!("http://{}:5522", ip);
-
-            if existing_urls.iter().any(|u| u.contains(&ip)) {
-                continue;
-            }
-
-            let client = client.clone();
-            let handle = tokio::spawn(async move {
-                let health_url = format!("{}/health", url);
-                match client.get(&health_url).send().await {
-                    Ok(resp) => {
-                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                            if data.get("success") == Some(&serde_json::Value::Bool(true)) {
-                                if let Some(agent_data) = data.get("data") {
-                                    let mut result = agent_data.clone();
-                                    if let Some(obj) = result.as_object_mut() {
-                                        obj.insert("url".to_string(), serde_json::Value::String(url));
-                                    }
-                                    return Some(result);
+    for ip in &ips_to_check {
+        let url = format!("http://{}:5522", ip);
+        let client = client.clone();
+        let handle = tokio::spawn(async move {
+            match client.get(format!("{}/health", url)).send().await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if data.get("success") == Some(&serde_json::Value::Bool(true)) {
+                            if let Some(agent_data) = data.get("data") {
+                                let mut result = agent_data.clone();
+                                if let Some(obj) = result.as_object_mut() {
+                                    obj.insert("url".to_string(), serde_json::Value::String(url));
                                 }
+                                return Some(result);
                             }
                         }
-                        None
                     }
-                    Err(_) => None,
+                    None
                 }
-            });
-            handles.push(handle);
-        }
+                Err(_) => None,
+            }
+        });
+        handles.push(handle);
     }
 
     for handle in handles {
