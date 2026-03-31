@@ -531,6 +531,21 @@ async fn fetch_remote_config_digest(registry: &str, repo: &str, tag: &str, creds
     }
 }
 
+async fn inspect_container(
+    State(state): State<Arc<AgentState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, StatusCode> {
+    state.check_auth(&headers)?;
+    match state.docker.inspect_container(&id, None).await {
+        Ok(info) => {
+            let val = serde_json::to_value(&info).unwrap_or_default();
+            Ok(Json(ApiResponse::ok(val)))
+        }
+        Err(e) => Ok(Json(ApiResponse::err(format!("Inspect failed: {}", e)))),
+    }
+}
+
 async fn recreate_container(
     State(state): State<Arc<AgentState>>,
     headers: HeaderMap,
@@ -1523,6 +1538,7 @@ async fn main() {
         .route("/api/containers/{id}/logs", get(container_logs))
         .route("/api/images", get(list_images))
         .route("/api/containers/{id}/check-update", post(check_container_update))
+        .route("/api/containers/{id}/inspect", get(inspect_container))
         .route("/api/containers/{id}/recreate", post(recreate_container))
         .route("/api/containers/{id}/terminal", get(agent_terminal))
         .route("/api/stats", get(agent_stats_live))

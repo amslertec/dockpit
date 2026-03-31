@@ -1332,6 +1332,109 @@ pub async fn env_recreate_container(
     }
 }
 
+// === Container Migration ===
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MigrateRequest {
+    pub target_env_id: String,
+    pub stop_source: bool,
+}
+
+pub async fn env_migrate_container(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path((env_id, container_id)): Path<(String, String)>,
+    Json(req): Json<MigrateRequest>,
+) -> Json<ApiResponse<String>> {
+    let source_env = match state.db.get_environment(&env_id) {
+        Some(e) => e,
+        None => return Json(ApiResponse::err("Quell-Umgebung nicht gefunden")),
+    };
+    let target_env = match state.db.get_environment(&req.target_env_id) {
+        Some(e) => e,
+        None => return Json(ApiResponse::err("Ziel-Umgebung nicht gefunden")),
+    };
+
+    if env_id == req.target_env_id {
+        return Json(ApiResponse::err("Quell- und Ziel-Umgebung sind identisch"));
+    }
+
+    // Step 1: Get container details from source
+    let container_info: serde_json::Value = if source_env.is_local {
+        match state.docker.inspect_container_raw(&container_id).await {
+            Ok(info) => info,
+            Err(e) => return Json(ApiResponse::err(format!("Container-Details nicht abrufbar: {}", e))),
+        }
+    } else {
+        let r: ApiResponse<serde_json::Value> = match agent_get(&source_env, &format!("/api/containers/{}/inspect", container_id)).await {
+            Json(resp) => resp,
+        };
+        match r.data {
+            Some(d) => d,
+            None => return Json(ApiResponse::err(r.error.unwrap_or_else(|| "Container nicht gefunden".into()))),
+        }
+    };
+
+    // Extract image name from container info
+    let image = container_info
+        .get("Config")
+        .and_then(|c| c.get("Image"))
+        .and_then(|i| i.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if image.is_empty() {
+        return Json(ApiResponse::err("Image-Name konnte nicht ermittelt werden"));
+    }
+
+    // Extract container name
+    let container_name = container_info
+        .get("Name")
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .trim_start_matches('/')
+        .to_string();
+
+    // Step 2: Pull image on target
+    let pull_body = serde_json::json!({ "image": image });
+    if target_env.is_local {
+        if let Err(e) = state.docker.pull_image(&image).await {
+            return Json(ApiResponse::err(format!("Image Pull auf Ziel fehlgeschlagen: {}", e)));
+        }
+    } else {
+        let r: Json<ApiResponse<String>> = agent_post(&target_env, "/api/images/pull", &pull_body).await;
+        if !r.0.success {
+            return Json(ApiResponse::err(format!("Image Pull auf Ziel fehlgeschlagen: {}", r.0.error.unwrap_or_default())));
+        }
+    }
+
+    // Step 3: Stop source container if requested
+    if req.stop_source {
+        if source_env.is_local {
+            state.docker.stop_container(&container_id).await.ok();
+        } else {
+            let stop_body = serde_json::json!({ "action": "stop" });
+            let _: Json<ApiResponse<String>> = agent_post(&source_env, &format!("/api/containers/{}/action", container_id), &stop_body).await;
+        }
+    }
+
+    let source_name = source_env.name.clone();
+    let target_name = target_env.name.clone();
+    state.db.log_audit(
+        &audit_user(&headers),
+        "container_migrate",
+        Some(&container_name),
+        Some(&format!("{} → {}", source_name, target_name)),
+    );
+
+    Json(ApiResponse::ok(format!(
+        "Image '{}' auf {} bereitgestellt{}",
+        image,
+        target_name,
+        if req.stop_source { format!(". Container auf {} gestoppt", source_name) } else { String::new() }
+    )))
+}
+
 // === Terminal (WebSocket exec) ===
 
 #[derive(serde::Deserialize)]
@@ -1970,6 +2073,85 @@ pub async fn create_environment(
         }
         Err(e) => Json(ApiResponse::err(format!("Speichern fehlgeschlagen: {}", e))),
     }
+}
+
+pub async fn discover_agents(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    // Get local IPs to determine subnets to scan
+    let mut results = Vec::new();
+    let existing_urls: Vec<String> = state.db.get_environments().iter().map(|e| e.url.clone()).collect();
+
+    // Scan common private subnets based on server's network
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(800))
+        .build()
+        .unwrap();
+
+    // Get the server's own IPs to determine subnet
+    let output = tokio::process::Command::new("hostname")
+        .arg("-I")
+        .output()
+        .await;
+
+    let mut subnets_to_scan: Vec<String> = Vec::new();
+    if let Ok(out) = output {
+        let ips = String::from_utf8_lossy(&out.stdout);
+        for ip in ips.split_whitespace() {
+            if let Some(prefix) = ip.rsplitn(2, '.').last() {
+                subnets_to_scan.push(prefix.to_string());
+            }
+        }
+    }
+
+    if subnets_to_scan.is_empty() {
+        subnets_to_scan.push("192.168.1".to_string());
+    }
+
+    // Scan each subnet in parallel
+    let mut handles = Vec::new();
+    for subnet in &subnets_to_scan {
+        for i in 1..=254u8 {
+            let ip = format!("{}.{}", subnet, i);
+            let url = format!("http://{}:5522", ip);
+
+            // Skip already connected agents
+            if existing_urls.iter().any(|u| u.contains(&ip)) {
+                continue;
+            }
+
+            let client = client.clone();
+            let handle = tokio::spawn(async move {
+                let health_url = format!("{}/health", url);
+                match client.get(&health_url).send().await {
+                    Ok(resp) => {
+                        if let Ok(data) = resp.json::<serde_json::Value>().await {
+                            if data.get("success") == Some(&serde_json::Value::Bool(true)) {
+                                if let Some(agent_data) = data.get("data") {
+                                    let mut result = agent_data.clone();
+                                    if let Some(obj) = result.as_object_mut() {
+                                        obj.insert("url".to_string(), serde_json::Value::String(url));
+                                    }
+                                    return Some(result);
+                                }
+                            }
+                        }
+                        None
+                    }
+                    Err(_) => None,
+                }
+            });
+            handles.push(handle);
+        }
+    }
+
+    for handle in handles {
+        if let Ok(Some(agent)) = handle.await {
+            results.push(agent);
+        }
+    }
+
+    Json(ApiResponse::ok(results))
 }
 
 pub async fn update_environment(

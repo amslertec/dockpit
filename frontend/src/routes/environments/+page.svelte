@@ -49,6 +49,10 @@
 	let regLoading = $state(false);
 	let regError = $state('');
 
+	// Discovery
+	let discovering = $state(false);
+	let discoveredAgents = $state<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>([]);
+
 	const tabs = [
 		{ id: 0, label: $t('env.connectedServers') },
 		{ id: 1, label: $t('env.connectRemote') },
@@ -113,6 +117,31 @@
 		connecting = false;
 		if (r.success) { addName = ''; addUrl = ''; toasts.success($t('env.connected', { name: r.data!.name })); activeTab = 0; loadAll(); }
 		else connectError = r.error || $t('common.error');
+	}
+
+	// Discovery
+	async function discoverAgents() {
+		discovering = true;
+		discoveredAgents = [];
+		const r = await api.post<{hostname: string; version: string; docker_version: string; paired: boolean; url: string}[]>('/agents/discover', {});
+		discovering = false;
+		if (r.success && r.data) {
+			discoveredAgents = r.data.filter(a => !a.paired);
+		}
+		if (discoveredAgents.length === 0) {
+			toasts.info($t('env.noAgentsFound'));
+		}
+	}
+
+	async function connectDiscovered(agent: {hostname: string; url: string}) {
+		connecting = true; connectError = '';
+		const r = await api.post<EnvironmentInfo>('/environments', { name: agent.hostname, url: agent.url });
+		connecting = false;
+		if (r.success) {
+			toasts.success($t('env.connected', { name: r.data!.name }));
+			discoveredAgents = discoveredAgents.filter(a => a.url !== agent.url);
+			activeTab = 0; loadAll();
+		} else connectError = r.error || $t('common.error');
 	}
 
 	// Registry
@@ -290,6 +319,32 @@
 						{#if connectError}<p class="text-[var(--red)] text-xs">{connectError}</p>{/if}
 						<Button variant="primary" size="md" type="submit" loading={connecting}>{connecting ? $t('env.connecting') : $t('env.connectServer')}</Button>
 					</form>
+				</div>
+
+				<!-- Network Discovery -->
+				<div class="mt-6 pt-5 border-t border-theme">
+					<h3 class="text-sm font-semibold text-primary mb-2">{$t('env.autoDiscovery')}</h3>
+					<p class="text-xs text-secondary mb-3">{$t('env.autoDiscoveryDesc')}</p>
+					<Button variant="secondary" size="md" onclick={discoverAgents} loading={discovering}>
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+						{discovering ? $t('env.scanning') : $t('env.scanNetwork')}
+					</Button>
+
+					{#if discoveredAgents.length > 0}
+						<div class="mt-4 space-y-2">
+							{#each discoveredAgents as agent}
+								<div class="flex items-center justify-between bg-[var(--bg-0)] border border-theme rounded-lg p-3">
+									<div>
+										<div class="text-sm font-medium text-primary">{agent.hostname}</div>
+										<div class="text-[11px] text-muted">{agent.url} — Docker {agent.docker_version}</div>
+									</div>
+									<Button variant="primary" size="sm" onclick={() => connectDiscovered(agent)} loading={connecting}>
+										{$t('env.connectAgent')}
+									</Button>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 			<!-- Tab 2: Docker Login -->

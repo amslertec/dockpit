@@ -139,6 +139,12 @@ impl DockerClient {
         with_timeout(self.docker.inspect_container(id, None)).await
     }
 
+    pub async fn inspect_container_raw(&self, id: &str) -> Result<serde_json::Value, String> {
+        let info = self.docker.inspect_container(id, None).await
+            .map_err(|e| format!("Inspect failed: {}", e))?;
+        serde_json::to_value(&info).map_err(|e| format!("Serialize failed: {}", e))
+    }
+
     pub async fn inspect_image(&self, name: &str) -> Result<bollard::models::ImageInspect, bollard::errors::Error> {
         with_timeout(self.docker.inspect_image(name)).await
     }

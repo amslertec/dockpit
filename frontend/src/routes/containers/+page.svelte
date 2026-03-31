@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { selectedEnv } from '$lib/stores/environment';
+	import { selectedEnv, environments } from '$lib/stores/environment';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import { toasts } from '$lib/stores/toast';
 	import { formatPorts, truncateId, formatDate, extractHealth } from '$lib/utils/format';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -26,6 +27,15 @@
 	let updateStatus = $state<Map<string, 'checking' | 'up-to-date' | 'outdated'>>(new Map());
 	interface RecreateStep { text: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string; }
 	let recreateModal = $state<{ name: string; image: string; steps: RecreateStep[]; output: string; done: boolean } | null>(null);
+
+	let migrateModal = $state<{ id: string; name: string; image: string } | null>(null);
+	let migrateTarget = $state('');
+	let migrateStopSource = $state(true);
+	let migrating = $state(false);
+
+	const migrateTargets = $derived(
+		$environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name }))
+	);
 
 	let sortKey = $state<string>('name');
 	let sortAsc = $state(true);
@@ -221,6 +231,24 @@
 		if (ok > 0) toasts.success($t('containers.bulkSuccess', { count: ok, action: act }));
 		if (fail > 0) toasts.error($t('containers.bulkFail', { count: fail, action: act }));
 		selected = new Set(); setTimeout(load, 800);
+	}
+
+	async function migrateContainer() {
+		if (!migrateModal || !migrateTarget) return;
+		migrating = true;
+		const r = await api.post<string>(`/env/${$selectedEnv}/containers/${migrateModal.id}/migrate`, {
+			target_env_id: migrateTarget,
+			stop_source: migrateStopSource,
+		});
+		migrating = false;
+		if (r.success) {
+			toasts.success(r.data || $t('containers.migrated'));
+			migrateModal = null;
+			migrateTarget = '';
+			load();
+		} else {
+			toasts.error(r.error || $t('common.error'));
+		}
 	}
 </script>
 
@@ -424,6 +452,8 @@
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></a>
 										<a href="/containers/{c.id}/terminal" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--green)] hover:border-[var(--green)] transition no-underline" title={$t('containers.terminal')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></a>
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--accent)] hover:border-[var(--accent)] transition" onclick={() => migrateModal = { id: c.id, name: c.name, image: c.image }} title={$t('containers.migrate')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--red)] hover:border-[var(--red)] transition" onclick={() => action(c.id, 'remove')} title={$t('containers.remove')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
 									{/if}
@@ -521,6 +551,35 @@
 			{/if}
 		</div>
 	</div>
+{/if}
+
+{#if migrateModal}
+	<Modal title={$t('containers.migrateTitle')} onclose={() => migrateModal = null}>
+		<div class="space-y-4">
+			<div>
+				<p class="text-sm text-secondary mb-1">{$t('containers.migrateContainer')}</p>
+				<p class="text-sm font-medium text-primary">{migrateModal.name}</p>
+				<p class="text-xs text-muted mt-0.5">{migrateModal.image}</p>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-secondary mb-1">{$t('containers.migrateTarget')}</label>
+				<select bind:value={migrateTarget} class="w-full h-9 px-3 text-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]">
+					<option value="">{$t('containers.selectTarget')}</option>
+					{#each migrateTargets as t}
+						<option value={t.value}>{t.label}</option>
+					{/each}
+				</select>
+			</div>
+			<label class="flex items-center gap-2 cursor-pointer">
+				<input type="checkbox" bind:checked={migrateStopSource} class="rounded" />
+				<span class="text-sm text-secondary">{$t('containers.migrateStopSource')}</span>
+			</label>
+		</div>
+		{#snippet footer()}
+			<Button variant="secondary" size="sm" onclick={() => migrateModal = null}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={migrateContainer} loading={migrating} disabled={!migrateTarget}>{$t('containers.migrateStart')}</Button>
+		{/snippet}
+	</Modal>
 {/if}
 
 {#if confirm}

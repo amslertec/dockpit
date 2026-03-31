@@ -113,6 +113,14 @@ export const de: Record<string, string> = {
 	'containers.createStart': 'Container neu erstellen & starten',
 	'containers.fullOutput': 'Vollständige Ausgabe',
 	'containers.successCount': '{ok} erfolgreich, {fail} fehlgeschlagen',
+	'containers.migrate': 'Migrieren',
+	'containers.migrateTitle': 'Container migrieren',
+	'containers.migrateContainer': 'Container:',
+	'containers.migrateTarget': 'Ziel-Server',
+	'containers.selectTarget': 'Ziel auswählen...',
+	'containers.migrateStopSource': 'Container auf Quell-Server nach Migration stoppen',
+	'containers.migrateStart': 'Migration starten',
+	'containers.migrated': 'Migration erfolgreich abgeschlossen',
 
 	// === Images ===
 	'images.title': 'Images',
@@ -239,6 +247,12 @@ export const de: Record<string, string> = {
 	'env.confirmRemove': 'Server wirklich entfernen?',
 	'env.confirmLogout': 'Login für "{name}" entfernen?',
 	'env.loginSuccess': 'Login erfolgreich',
+	'env.autoDiscovery': 'Netzwerk-Erkennung',
+	'env.autoDiscoveryDesc': 'Lokales Netzwerk nach DockPit Agents auf Port 5522 scannen.',
+	'env.scanNetwork': 'Netzwerk scannen',
+	'env.scanning': 'Scanne...',
+	'env.noAgentsFound': 'Keine Agents im Netzwerk gefunden',
+	'env.connectAgent': 'Verbinden',
 
 	// === Users ===
 	'users.title': 'Benutzer',
@@ -656,6 +670,7 @@ export const de: Record<string, string> = {
 	'audit.updateCheck': 'Update-Check',
 	'audit.jobCreate': 'Job Erstellen',
 	'audit.jobDelete': 'Job L\u00f6schen',
+	'audit.containerMigrate': 'Container-Migration',
 
 	// === Favoriten ===
 	// === Vorlagen ===
