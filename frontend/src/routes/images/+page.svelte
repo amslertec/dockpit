@@ -251,15 +251,13 @@
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
 			{#if $canDoAction('action.image_pull_delete')}
-			<Button variant="danger" size="sm" loading={pruning} onclick={prune}>
+			<Button variant="danger" size="sm" loading={pruning} onclick={prune} title={$t('images.pruneUnused')}>
 				{#if !pruning}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
 				{/if}
-				{$t('images.pruneUnused')}
 			</Button>
-			<Button variant="primary" size="sm" onclick={() => showPull = true}>
+			<Button variant="primary" size="sm" onclick={() => showPull = true} title={$t('images.pull')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-				{$t('images.pull')}
 			</Button>
 			{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>

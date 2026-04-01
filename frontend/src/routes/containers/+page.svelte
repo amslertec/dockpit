@@ -418,7 +418,6 @@
 			<input bind:value={search} placeholder={$t('common.search')} class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-40 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
 			{#if $canManageDocker}<Button variant="warning" size="sm" onclick={() => { for (const c of filtered) if (c.state === 'running') checkUpdate(c.id); }} title={$t('containers.checkUpdates')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-				{$t('containers.checkUpdates')}
 			</Button>{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>

@@ -157,18 +157,16 @@
 			<p class="text-xs text-[var(--text-muted)] mt-0.5">{scans.length} {$t('vuln.imagesScanned').toLowerCase()}</p>
 		</div>
 		<div class="flex items-center gap-2">
-			<Button size="sm" variant="success" onclick={loadScans} disabled={loading}>
+			<Button size="sm" variant="success" onclick={loadScans} disabled={loading} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-				{$t('common.refresh')}
 			</Button>
 			{#if $canDoAction('action.vuln_scan')}
-			<Button size="sm" variant="primary" onclick={scanAll} disabled={scanning}>
+			<Button size="sm" variant="primary" onclick={scanAll} disabled={scanning} title={$t('vuln.scanAll')}>
 				{#if scanning}
 					<div class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
 				{:else}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 				{/if}
-				{$t('vuln.scanAll')}
 			</Button>
 			{/if}
 		</div>
@@ -286,8 +284,8 @@
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<span onclick={(e) => { e.stopPropagation(); scanImage(scan.image); }}>
-										<Button size="sm" variant="warning" disabled={scanningImage === scan.image} loading={scanningImage === scan.image}>
-											{$t('vuln.scan')}
+										<Button size="sm" variant="warning" disabled={scanningImage === scan.image} loading={scanningImage === scan.image} title={$t('vuln.scan')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 										</Button>
 									</span>
 									{/if}

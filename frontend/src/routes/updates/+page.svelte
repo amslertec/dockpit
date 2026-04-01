@@ -147,12 +147,13 @@
 		</div>
 		<div class="flex items-center gap-2">
 			{#if $canDoAction('action.container_recreate')}
-			<Button variant="primary" size="sm" onclick={runCheck} disabled={status.running} loading={status.running}>
+			<Button variant="primary" size="sm" onclick={runCheck} disabled={status.running} loading={status.running} title={status.running ? $t('updates.checkRunning') : $t('updates.checkNow')}>
 				{#if !status.running}<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>{/if}
-				{status.running ? $t('updates.checkRunning') : $t('updates.checkNow')}
 			</Button>
 			{#if results.length > 0 && !status.running}
-				<Button variant="danger" size="sm" onclick={clearReport}>{$t('updates.clearReport')}</Button>
+				<Button variant="danger" size="sm" onclick={clearReport} title={$t('updates.clearReport')}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+				</Button>
 			{/if}
 			{/if}
 		</div>

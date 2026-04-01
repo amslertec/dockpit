@@ -704,7 +704,7 @@ export const de: Record<string, string> = {
 	'notifications.saved': 'Benachrichtigungseinstellungen gespeichert',
 
 	// === Ereignisse ===
-	'events.title': 'Container-Ereignisse',
+	'events.title': 'Container Events',
 	'events.refresh': 'Aktualisieren',
 	'events.autoRefresh': 'Live',
 	'events.filter': 'Filter',
@@ -726,7 +726,7 @@ export const de: Record<string, string> = {
 	'events.health_status': 'Health-Check',
 
 	// === Schwachstellen ===
-	'vuln.title': 'Schwachstellen-Scanner',
+	'vuln.title': 'Vulnerability Scanner',
 	'vuln.scanAll': 'Alle Images scannen',
 	'vuln.scan': 'Scannen',
 	'vuln.scanning': 'Scanne...',

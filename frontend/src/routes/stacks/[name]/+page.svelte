@@ -285,21 +285,22 @@
 		<div class="flex items-center gap-2 flex-wrap">
 			{#if $canDoAction('action.stack_deploy_stop')}
 				{#if detail.status !== 'running'}
-					<Button variant="success" size="sm" onclick={deploy}>
-						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>{$t('stacks.deploy')}</Button>
+					<Button variant="success" size="sm" onclick={deploy} title={$t('stacks.deploy')}>
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></Button>
 				{:else}
-					<Button variant="warning" size="sm" onclick={stop}>
-						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>{$t('containers.stop')}</Button>
+					<Button variant="warning" size="sm" onclick={stop} title={$t('containers.stop')}>
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></Button>
 				{/if}
 			{/if}
 			{#if $canDoAction('action.stack_edit')}
-				<Button variant="purple" size="sm" onclick={() => showEditor = !showEditor}>
+				<Button variant="purple" size="sm" onclick={() => showEditor = !showEditor} title={showEditor ? $t('stacks.hideEditor') : $t('stacks.editor')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-					{showEditor ? $t('stacks.hideEditor') : $t('stacks.editor')}
 				</Button>
 			{/if}
 			{#if $canDoAction('action.stack_create_delete')}
-				<Button variant="danger" size="sm" onclick={remove}>{$t('common.delete')}</Button>
+				<Button variant="danger" size="sm" onclick={remove} title={$t('common.delete')}>
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+				</Button>
 			{/if}
 		</div>
 	</div>
@@ -601,7 +602,7 @@
 				<CustomCheckbox checked={migrateStopSource} onchange={(v) => migrateStopSource = v} label={$t('containers.migrateStopSource')} />
 			</div>
 			<div class="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2">
-				<Button variant="secondary" size="sm" onclick={() => { migrateModal = null; migrateDropdown = false; }}>{$t('common.cancel')}</Button>
+				<Button variant="danger" size="sm" onclick={() => { migrateModal = null; migrateDropdown = false; }}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" onclick={migrateContainer} loading={migrating} disabled={!migrateTarget}>{$t('containers.migrateStart')}</Button>
 			</div>
 		</div>

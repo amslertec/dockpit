@@ -277,11 +277,9 @@
 			{#if $canDoAction('action.stack_create_delete')}
 				<Button variant="purple" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
-					<span class="hidden md:inline">{$t('templates.fromTemplate')}</span>
 				</Button>
 				<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }} title={$t('stacks.newStack')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-					<span class="hidden md:inline">{$t('stacks.newStack')}</span>
 				</Button>
 			{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>

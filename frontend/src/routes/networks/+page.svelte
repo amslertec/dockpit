@@ -158,11 +158,10 @@
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
 			{#if $canDoAction('action.network_delete')}
-			<Button variant="danger" size="sm" loading={pruning} onclick={prune}>
+			<Button variant="danger" size="sm" loading={pruning} onclick={prune} title={$t('networks.pruneUnused')}>
 				{#if !pruning}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
 				{/if}
-				{$t('networks.pruneUnused')}
 			</Button>
 			{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
