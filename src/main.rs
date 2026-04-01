@@ -239,6 +239,10 @@ async fn main() {
         .route("/api/snapshots/diff/{id1}/{id2}", get(handlers::get_snapshot_diff))
         .route("/api/my-permissions", get(handlers::get_user_permissions_handler))
         .route("/api/profile/email", put(handlers::update_profile_email))
+        .route("/api/settings", get(handlers::get_settings))
+        .route("/api/settings", post(handlers::save_settings))
+        .route("/api/settings/webhook/test", post(handlers::test_webhook))
+        .route("/api/settings/email/test", post(handlers::test_email))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
@@ -282,10 +286,6 @@ async fn main() {
         .route("/api/env/{env_id}/stacks/{name}", put(handlers::env_update_stack))
         .route("/api/env/{env_id}/stacks/{name}", delete(handlers::env_delete_stack))
         .route("/api/env/{env_id}/stacks/{name}/redeploy", post(handlers::env_redeploy_stack))
-        .route("/api/settings", get(handlers::get_settings))
-        .route("/api/settings", post(handlers::save_settings))
-        .route("/api/settings/webhook/test", post(handlers::test_webhook))
-        .route("/api/settings/email/test", post(handlers::test_email))
         .route("/api/updates/check", post(handlers::run_update_check))
         .route("/api/updates/report", delete(handlers::clear_update_report))
         .route("/api/audit", get(handlers::get_audit_log))

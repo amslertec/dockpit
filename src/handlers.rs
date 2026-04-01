@@ -638,9 +638,9 @@ pub async fn test_email(
     let msg = match Message::builder()
         .from(from)
         .to(to)
-        .subject("DockPit Test-Email")
+        .subject("DockPit Test Email")
         .header(ContentType::TEXT_PLAIN)
-        .body("Dies ist eine Test-Email von DockPit.\n\nWenn du diese Email erhältst, funktioniert die Email-Konfiguration korrekt.\n\n-- DockPit".to_string()) {
+        .body("This is a test email from DockPit.\n\nIf you received this email, your email configuration is working correctly.\n\n-- DockPit".to_string()) {
             Ok(m) => m,
             Err(e) => return Json(ApiResponse::err(format!("Build: {}", e))),
         };
@@ -903,6 +903,20 @@ pub async fn update_user(
         if let Err(e) = state.db.update_user_role(&id, new_role) {
             return Json(ApiResponse::err(format!("Fehler: {}", e)));
         }
+        // Auto-update group assignment to match new role
+        let group_name = match new_role.as_str() {
+            "super_admin" | "admin" => "Admin",
+            "editor" => "Editor",
+            "viewer" => "Viewer",
+            "user" => "DockPit",
+            _ => "",
+        };
+        if !group_name.is_empty() {
+            let groups = state.db.list_groups();
+            if let Some((gid, _, _, _, _, _)) = groups.iter().find(|(_, name, _, _, _, _)| name == group_name) {
+                state.db.set_user_groups(&id, &[*gid]);
+            }
+        }
     }
 
     if let Some(ref new_password) = req.password {
@@ -983,7 +997,7 @@ pub async fn get_settings(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    if !has_permission(&state, &claims, "action.user_management") {
+    if !has_permission(&state, &claims, "page.settings") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -1002,7 +1016,7 @@ pub async fn save_settings(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    if !has_permission(&state, &claims, "action.user_management") {
+    if !has_permission(&state, &claims, "page.settings") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
