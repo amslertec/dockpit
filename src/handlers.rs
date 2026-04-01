@@ -2124,6 +2124,154 @@ async fn proxy_terminal(
     tokio::select! { _ = s2a => {}, _ = a2s => {} }
 }
 
+// === Host Terminal ===
+
+pub async fn host_terminal(
+    State(state): State<Arc<AppState>>,
+    Path(env_id): Path<String>,
+    Query(query): Query<TerminalQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !validate_ws_token(&state, &query.token) {
+        return axum::http::StatusCode::UNAUTHORIZED.into_response();
+    }
+    let env = match state.db.get_environment(&env_id) {
+        Some(e) => e,
+        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+
+    if env.is_local {
+        ws.on_upgrade(move |socket| handle_host_terminal(socket, state))
+    } else {
+        let agent_url = env.url.clone();
+        let agent_token = env.agent_token.clone().unwrap_or_default();
+        ws.on_upgrade(move |socket| proxy_host_terminal(socket, agent_url, agent_token))
+    }
+}
+
+async fn handle_host_terminal(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+) {
+    use futures_util::{StreamExt, SinkExt};
+    use tokio::io::AsyncWriteExt;
+    use bollard::exec::StartExecResults;
+
+    // Exec nsenter into our own container (dockpit runs with pid:host + privileged)
+    let container_id = "dockpit";
+    let cmd = vec!["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--", "/bin/bash"];
+    let exec_id = match state.docker.create_exec(container_id, cmd, None).await {
+        Ok(id) => id,
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("\x1b[31mHost-Shell fehlgeschlagen: {}\x1b[0m\r\n", e).into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    let exec_result = match state.docker.start_exec(&exec_id).await {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("\x1b[31mExec fehlgeschlagen: {}\x1b[0m\r\n", e).into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    let docker = state.docker.clone_inner();
+
+    match exec_result {
+        StartExecResults::Attached { mut output, mut input } => {
+            let (mut ws_tx, mut ws_rx) = socket.split();
+
+            let out_handle = tokio::spawn(async move {
+                while let Some(Ok(log)) = output.next().await {
+                    let bytes = log.into_bytes();
+                    if ws_tx.send(Message::Binary(bytes.into())).await.is_err() { break; }
+                }
+            });
+
+            let exec_id_c = exec_id.clone();
+            let docker2 = docker.clone();
+            let in_handle = tokio::spawn(async move {
+                while let Some(Ok(msg)) = ws_rx.next().await {
+                    match msg {
+                        Message::Text(ref text) => {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
+                                if val.get("type").and_then(|t| t.as_str()) == Some("resize") {
+                                    let cols = val.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
+                                    let rows = val.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
+                                    use bollard::exec::ResizeExecOptions;
+                                    let _ = docker2.resize_exec(&exec_id_c, ResizeExecOptions { width: cols, height: rows }).await;
+                                    continue;
+                                }
+                            }
+                            if input.write_all(text.as_bytes()).await.is_err() { break; }
+                        }
+                        Message::Binary(data) => { if input.write_all(&data).await.is_err() { break; } }
+                        Message::Close(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+
+            tokio::select! { _ = out_handle => {}, _ = in_handle => {} }
+        }
+        StartExecResults::Detached => {}
+    }
+}
+
+async fn proxy_host_terminal(
+    server_ws: WebSocket,
+    agent_url: String,
+    agent_token: String,
+) {
+    use futures_util::{StreamExt, SinkExt};
+    use tokio_tungstenite::tungstenite;
+
+    let agent_ws_url = agent_url.replace("http://", "ws://").replace("https://", "wss://");
+    let url = format!("{}/api/host-terminal?token={}", agent_ws_url, urlencoding::encode(&agent_token));
+
+    let agent_conn = match tokio_tungstenite::connect_async(&url).await {
+        Ok((ws, _)) => ws,
+        Err(e) => {
+            tracing::error!("Agent host terminal WebSocket failed: {}", e);
+            return;
+        }
+    };
+
+    let (mut agent_tx, mut agent_rx) = agent_conn.split();
+    let (mut srv_tx, mut srv_rx) = server_ws.split();
+
+    // Server -> Agent
+    let s2a = tokio::spawn(async move {
+        while let Some(Ok(msg)) = srv_rx.next().await {
+            let agent_msg = match msg {
+                Message::Text(t) => tungstenite::Message::Text(t.to_string()),
+                Message::Binary(b) => tungstenite::Message::Binary(b.to_vec()),
+                Message::Close(_) => break,
+                _ => continue,
+            };
+            if agent_tx.send(agent_msg).await.is_err() { break; }
+        }
+    });
+
+    // Agent -> Server
+    let a2s = tokio::spawn(async move {
+        while let Some(Ok(msg)) = agent_rx.next().await {
+            let srv_msg = match msg {
+                tungstenite::Message::Text(t) => Message::Text(t.into()),
+                tungstenite::Message::Binary(b) => Message::Binary(b.into()),
+                tungstenite::Message::Close(_) => break,
+                _ => continue,
+            };
+            if srv_tx.send(srv_msg).await.is_err() { break; }
+        }
+    });
+
+    tokio::select! { _ = s2a => {}, _ = a2s => {} }
+}
+
 // === Live Stats WebSocket ===
 
 pub async fn env_stats_live(

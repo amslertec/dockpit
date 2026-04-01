@@ -4,6 +4,8 @@ services:
     container_name: dockpit
     restart: unless-stopped
     network_mode: host
+    pid: host
+    privileged: true
     volumes:
       - dockpit_data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro

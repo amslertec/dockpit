@@ -1314,6 +1314,103 @@ async fn agent_handle_terminal(
     }
 }
 
+// === Host Terminal ===
+
+async fn agent_host_terminal(
+    State(state): State<Arc<AgentState>>,
+    Query(query): Query<HashMap<String, String>>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, StatusCode> {
+    // Auth via token query param
+    let token = query.get("token").cloned().unwrap_or_default();
+    let lock = state.paired_token.read().unwrap();
+    if let Some(stored) = lock.as_ref() {
+        if token != *stored { return Err(StatusCode::UNAUTHORIZED); }
+    }
+    drop(lock);
+
+    Ok(ws.on_upgrade(move |socket| handle_agent_host_terminal(socket, state)))
+}
+
+async fn handle_agent_host_terminal(
+    mut socket: WebSocket,
+    state: Arc<AgentState>,
+) {
+    use futures_lite::StreamExt as FStreamExt;
+    use futures_util::SinkExt;
+    use bollard::exec::StartExecResults;
+    use tokio::io::AsyncWriteExt;
+
+    // Exec nsenter into the agent's own container (runs with pid:host + privileged)
+    let container_name = "dockpit-agent";
+    let exec_opts = bollard::exec::CreateExecOptions {
+        attach_stdin: Some(true),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        tty: Some(true),
+        cmd: Some(vec!["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--", "/bin/bash"]),
+        ..Default::default()
+    };
+
+    let exec_id = match state.docker.create_exec(container_name, exec_opts).await {
+        Ok(r) => r.id,
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("\x1b[31mHost-Shell error: {}\x1b[0m\r\n", e).into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    let exec_result = match state.docker.start_exec(&exec_id, Some(bollard::exec::StartExecOptions { detach: false, tty: true, ..Default::default() })).await {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("\x1b[31mExec failed: {}\x1b[0m\r\n", e).into())).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    match exec_result {
+        StartExecResults::Attached { mut output, mut input } => {
+            let (mut ws_tx, mut ws_rx) = futures_util::StreamExt::split(socket);
+
+            let out_handle = tokio::spawn(async move {
+                while let Some(Ok(log)) = FStreamExt::next(&mut output).await {
+                    let bytes = log.into_bytes();
+                    if ws_tx.send(Message::Binary(bytes.into())).await.is_err() { break; }
+                }
+            });
+
+            let exec_id_c = exec_id.clone();
+            let docker2 = state.docker.clone();
+            let in_handle = tokio::spawn(async move {
+                while let Some(Ok(msg)) = futures_util::StreamExt::next(&mut ws_rx).await {
+                    match msg {
+                        Message::Text(ref text) => {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
+                                if val.get("type").and_then(|t| t.as_str()) == Some("resize") {
+                                    let cols = val.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
+                                    let rows = val.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
+                                    use bollard::exec::ResizeExecOptions;
+                                    let _ = docker2.resize_exec(&exec_id_c, ResizeExecOptions { width: cols, height: rows }).await;
+                                    continue;
+                                }
+                            }
+                            if input.write_all(text.as_bytes()).await.is_err() { break; }
+                        }
+                        Message::Binary(data) => { if input.write_all(&data).await.is_err() { break; } }
+                        Message::Close(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+
+            tokio::select! { _ = out_handle => {}, _ = in_handle => {} }
+        }
+        StartExecResults::Detached => {}
+    }
+}
+
 // === Disk Usage ===
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1596,6 +1693,7 @@ async fn main() {
         .route("/api/containers/{id}/recreate", post(recreate_container))
         .route("/api/containers/{id}/rollback", post(rollback_container))
         .route("/api/containers/{id}/terminal", get(agent_terminal))
+        .route("/api/host-terminal", get(agent_host_terminal))
         .route("/api/stats", get(agent_stats_live))
         .route("/api/docker/login", post(agent_docker_login))
         .route("/api/docker/logout/{registry}", delete(agent_docker_logout))

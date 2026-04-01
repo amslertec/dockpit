@@ -16,6 +16,7 @@ export const en: Record<string, string> = {
 	'nav.account': 'Account',
 	'nav.profile': 'Profile',
 	'nav.logout': 'Logout',
+	'nav.hostTerminal': 'Host Terminal',
 
 	// === Topbar ===
 	'topbar.menu': 'Menu',
@@ -509,6 +510,14 @@ export const en: Record<string, string> = {
 	'terminal.connectionFailed': 'Connection could not be established. Shell may not be available.',
 	'terminal.wsError': 'WebSocket error. Is the container running?',
 	'terminal.disconnected': '--- Connection closed ---',
+
+	// === Host Terminal ===
+	'hostTerminal.title': 'Host Terminal',
+	'hostTerminal.desc': 'Direct shell access to Docker host servers',
+	'hostTerminal.selectServer': 'Select Server',
+	'hostTerminal.connect': 'Connect',
+	'hostTerminal.connecting': 'Connecting...',
+	'hostTerminal.hostShell': 'Host Shell',
 
 	// === Logs ===
 	'logs.title': 'Logs: {name}',

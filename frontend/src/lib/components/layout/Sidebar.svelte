@@ -97,7 +97,11 @@
 				<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
 				{$t('audit.title')}
 			</a>
-			<a href="/environments" class="nav-item {isActive('/environments') ? 'nav-active' : ''}" onclick={onclose}>
+			<a href="/host-terminal" class="nav-item {isActive('/host-terminal') ? 'nav-active' : ''}" onclick={onclose}>
+					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+					{$t('nav.hostTerminal')}
+				</a>
+				<a href="/environments" class="nav-item {isActive('/environments') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
 					{$t('nav.environments')}
 				</a>

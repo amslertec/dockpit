@@ -349,6 +349,8 @@
 							<p class="text-[11px] text-muted mb-1">Docker Run:</p>
 							<div class="bg-0 border border-theme rounded-md p-2.5 font-mono text-[11px] text-secondary leading-relaxed overflow-x-auto whitespace-pre">docker run -d --name dockpit-agent \
   -p 5522:5522 \
+  --pid=host \
+  --privileged \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /var/docker/container:/stacks \
   -e AGENT_STACKS_DIR=/stacks \
@@ -362,6 +364,8 @@
     image: amslertec/dockpit-agent:latest
     container_name: dockpit-agent
     restart: unless-stopped
+    pid: host
+    privileged: true
     ports:
       - "5522:5522"
     volumes:
