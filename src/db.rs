@@ -76,8 +76,9 @@ impl Database {
         // Migration: add hash column to audit_log
         conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT", []).ok();
 
-        // Migration: add color column to groups
-        conn.execute("ALTER TABLE groups ADD COLUMN color TEXT DEFAULT '#6c5ce7'", []).ok();
+        // Migration: add email columns to users
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT", []).ok();
+        conn.execute("ALTER TABLE users ADD COLUMN email_notifications INTEGER NOT NULL DEFAULT 1", []).ok();
 
         // Migration: add role column to users if not exists
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'", []).ok();
@@ -223,6 +224,9 @@ impl Database {
                 FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
         ")?;
+
+        // Migration: add color column to groups
+        conn.execute("ALTER TABLE groups ADD COLUMN color TEXT DEFAULT '#6c5ce7'", []).ok();
 
         // Indexes for frequently queried tables
         conn.execute_batch("
@@ -472,25 +476,60 @@ impl Database {
 
     // === User Management ===
 
-    pub fn list_users(&self) -> Vec<(String, String, String, String, bool)> {
+    pub fn list_users(&self) -> Vec<(String, String, String, String, bool, Option<String>, bool)> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, username, role, created_at, totp_secret FROM users ORDER BY created_at")
+            .prepare("SELECT id, username, role, created_at, totp_secret, email, COALESCE(email_notifications, 1) FROM users ORDER BY created_at")
             .unwrap();
 
         stmt.query_map([], |row| {
             let totp_secret: Option<String> = row.get(4)?;
+            let email_notif: i32 = row.get(6)?;
             Ok((
                 row.get(0)?,
                 row.get(1)?,
                 row.get(2)?,
                 row.get(3)?,
                 totp_secret.is_some(),
+                row.get(5)?,
+                email_notif != 0,
             ))
         })
         .unwrap()
         .filter_map(|r| r.ok())
         .collect()
+    }
+
+    pub fn update_user_email(&self, username: &str, email: Option<&str>) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE users SET email = ?1 WHERE username = ?2", params![email, username])?;
+        Ok(())
+    }
+
+    pub fn set_email_notifications(&self, username: &str, enabled: bool) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE users SET email_notifications = ?1 WHERE username = ?2", params![enabled as i32, username])?;
+        Ok(())
+    }
+
+    pub fn get_users_for_email_notification(&self, _notification_type: &str) -> Vec<(String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT username, email FROM users WHERE email IS NOT NULL AND email != '' AND email_notifications = 1"
+        ).unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_user_email(&self, username: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT email FROM users WHERE username = ?1", params![username], |row| row.get::<_, Option<String>>(0)).ok().flatten()
+    }
+
+    pub fn get_user_email_notifications(&self, username: &str) -> bool {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COALESCE(email_notifications, 1) FROM users WHERE username = ?1", params![username], |row| row.get::<_, i32>(0))
+            .map(|v| v != 0).unwrap_or(true)
     }
 
     pub fn create_user_with_role(&self, id: &str, username: &str, password_hash: &str, role: &str) -> Result<(), rusqlite::Error> {
