@@ -131,7 +131,11 @@
 			return;
 		}
 
-		// 4. Load environments, then show the current page
+		// 4. Load permissions, then environments, then show the current page
+		const permR = await api.get<{role: string; permissions: string[]}>('/my-permissions');
+		if (permR.success && permR.data) {
+			auth.setPermissions(permR.data.permissions);
+		}
 		await loadEnvironments();
 		ready = true;
 	});

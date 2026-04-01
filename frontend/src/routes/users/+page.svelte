@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
@@ -11,6 +13,10 @@
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+
+	$effect(() => {
+		if (!$canDoAction('action.user_management')) goto('/profile');
+	});
 
 	let activeTab = $state(0);
 	let loading = $state(true);
@@ -59,40 +65,118 @@
 		{ value: 'user', label: $t('users.roleUser'), desc: $t('users.roleUserDesc') },
 	]);
 
-	const allPagePerms = [
-		{ key: 'page.dashboard', label: 'Dashboard' },
-		{ key: 'page.containers', label: 'Containers' },
-		{ key: 'page.stacks', label: 'Stacks' },
-		{ key: 'page.images', label: 'Images' },
-		{ key: 'page.volumes', label: 'Volumes' },
-		{ key: 'page.networks', label: 'Networks' },
-		{ key: 'page.monitoring', label: 'Monitoring' },
-		{ key: 'page.health', label: 'Health' },
-		{ key: 'page.events', label: 'Events' },
-		{ key: 'page.updates', label: 'Updates' },
-		{ key: 'page.vulnerabilities', label: 'Vulnerabilities' },
-		{ key: 'page.audit', label: 'Audit' },
-		{ key: 'page.host_terminal', label: 'Host Terminal' },
-		{ key: 'page.environments', label: 'Environments' },
-		{ key: 'page.settings', label: 'Settings' },
+	// Grouped permissions: page + related actions
+	const permSections = [
+		{ page: 'page.dashboard', label: 'Dashboard', icon: '📊', actions: [] },
+		{ page: 'page.containers', label: 'Containers', icon: '📦', actions: [
+			{ key: 'action.container_start_stop', label: 'Start / Stop' },
+			{ key: 'action.container_restart', label: 'Restart' },
+			{ key: 'action.container_recreate', label: 'Recreate / Update' },
+			{ key: 'action.container_delete', label: 'Delete' },
+			{ key: 'action.container_logs', label: 'Logs' },
+			{ key: 'action.container_terminal', label: 'Terminal' },
+			{ key: 'action.container_inspect', label: 'Details' },
+			{ key: 'action.container_migrate', label: 'Migrate' },
+			{ key: 'action.container_rollback', label: 'Rollback' },
+		]},
+		{ page: 'page.stacks', label: 'Stacks', icon: '🗂️', actions: [
+			{ key: 'action.stack_deploy_stop', label: 'Deploy / Stop' },
+			{ key: 'action.stack_create_delete', label: 'Create / Delete' },
+			{ key: 'action.stack_edit', label: 'Edit (Compose)' },
+			{ key: 'action.stack_migrate', label: 'Migrate' },
+		]},
+		{ page: 'page.images', label: 'Images', icon: '🖼️', actions: [
+			{ key: 'action.image_pull_delete', label: 'Pull / Delete / Prune' },
+		]},
+		{ page: 'page.volumes', label: 'Volumes', icon: '💾', actions: [
+			{ key: 'action.volume_delete', label: 'Delete / Prune' },
+		]},
+		{ page: 'page.networks', label: 'Networks', icon: '🌐', actions: [
+			{ key: 'action.network_delete', label: 'Delete / Prune' },
+		]},
+		{ page: 'page.monitoring', label: 'Monitoring', icon: '📈', actions: [] },
+		{ page: 'page.health', label: 'Health Checks', icon: '❤️', actions: [] },
+		{ page: 'page.events', label: 'Events', icon: '🕐', actions: [] },
+		{ page: 'page.updates', label: 'Updates', icon: '⬇️', actions: [
+			{ key: 'action.container_recreate', label: 'Check / Recreate' },
+		]},
+		{ page: 'page.vulnerabilities', label: 'Vulnerabilities', icon: '🛡️', actions: [
+			{ key: 'action.vuln_scan', label: 'Scan' },
+		]},
+		{ page: 'page.audit', label: 'Audit Log', icon: '📋', actions: [] },
+		{ page: 'page.host_terminal', label: 'Host Terminal', icon: '💻', actions: [
+			{ key: 'action.host_terminal_connect', label: 'Connect' },
+		]},
+		{ page: 'page.environments', label: 'Environments', icon: '🖥️', actions: [
+			{ key: 'action.env_edit', label: 'Edit / Delete' },
+			{ key: 'action.env_connect', label: 'Connect (Agent)' },
+			{ key: 'action.docker_login', label: 'Docker Registry Login' },
+			{ key: 'action.scheduled_jobs', label: 'Scheduled Jobs' },
+		]},
+		{ page: 'page.settings', label: 'Settings', icon: '⚙️', actions: [
+			{ key: 'action.settings_general', label: 'General Settings' },
+			{ key: 'action.settings_updates', label: 'Update Monitor' },
+			{ key: 'action.settings_webhooks', label: 'Webhooks' },
+			{ key: 'action.settings_email', label: 'Email' },
+			{ key: 'action.backup', label: 'Backup / Restore' },
+			{ key: 'action.settings_alerts', label: 'Alert Rules' },
+		]},
 	];
 
-	const allActionPerms = [
-		{ key: 'action.container_start_stop', label: $t('containers.start') + ' / ' + $t('containers.stop') },
-		{ key: 'action.container_restart', label: $t('containers.restart') },
-		{ key: 'action.container_recreate', label: $t('containers.recreate') },
-		{ key: 'action.container_delete', label: $t('common.delete') + ' Container' },
-		{ key: 'action.container_logs', label: $t('containers.logs') },
-		{ key: 'action.container_terminal', label: $t('containers.terminal') },
-		{ key: 'action.stack_deploy_stop', label: 'Stack Deploy / Stop' },
-		{ key: 'action.stack_create_delete', label: 'Stack Create / Delete' },
-		{ key: 'action.stack_migrate', label: $t('stacks.migrate') },
-		{ key: 'action.image_pull_delete', label: 'Image Pull / Delete' },
-		{ key: 'action.volume_delete', label: 'Volume Delete' },
-		{ key: 'action.network_delete', label: 'Network Delete' },
-		{ key: 'action.backup', label: 'Backup / Restore' },
-		{ key: 'action.user_management', label: $t('nav.userManagement') },
+	// System-wide permissions (not tied to a page)
+	const systemPerms = [
+		{ key: 'action.server_switch', label: 'Server Switch (Topbar)' },
+		{ key: 'action.user_management', label: 'User Management' },
 	];
+
+	let expandedSections = $state<Set<string>>(new Set());
+
+	function toggleSection(page: string) {
+		const next = new Set(expandedSections);
+		if (next.has(page)) next.delete(page); else next.add(page);
+		expandedSections = next;
+	}
+
+	function togglePageWithSuggestions(page: string, actions: {key: string}[]) {
+		if (editPerms.includes(page)) {
+			// Removing page: also remove all its actions
+			editPerms = editPerms.filter(p => p !== page && !actions.some(a => a.key === p));
+		} else {
+			// Adding page: only add the page permission, expand section for manual action selection
+			editPerms = [...editPerms, page];
+			if (actions.length > 0) expandedSections = new Set([...expandedSections, page]);
+		}
+	}
+
+	function toggleAllSectionActions(page: string, actions: {key: string}[]) {
+		const allSelected = actions.every(a => editPerms.includes(a.key));
+		if (allSelected) {
+			editPerms = editPerms.filter(p => !actions.some(a => a.key === p));
+		} else {
+			editPerms = [...new Set([...editPerms, ...actions.map(a => a.key)])];
+		}
+	}
+
+	function selectAllPerms() {
+		const all: string[] = [];
+		for (const s of permSections) { all.push(s.page); for (const a of s.actions) all.push(a.key); }
+		for (const p of systemPerms) all.push(p.key);
+		const allSelected = all.every(p => editPerms.includes(p));
+		editPerms = allSelected ? [] : [...new Set(all)];
+	}
+
+	function selectNonePerms() { editPerms = []; }
+
+	// Translate default group descriptions
+	const defaultGroupDescs: Record<string, string> = { 'DockPit': 'groups.descDockPit', 'Admin': 'groups.descAdmin', 'Editor': 'groups.descEditor', 'Viewer': 'groups.descViewer' };
+	function groupDesc(g: any): string {
+		const key = defaultGroupDescs[g.name];
+		return key ? $t(key) : (g.description || '');
+	}
+
+	// Flat list for backward compat (used in toggleAllPerms)
+	const allPagePerms = permSections.map(s => ({ key: s.page, label: s.label }));
+	const allActionPerms = permSections.flatMap(s => s.actions).concat(systemPerms);
 
 	const superAdminCount = $derived(users.filter(u => u.role === 'super_admin').length);
 
@@ -377,8 +461,8 @@
 										{/if}
 									</div>
 								</div>
-								{#if g.description}
-									<p class="text-[11px] text-muted mb-2">{g.description}</p>
+								{#if groupDesc(g)}
+									<p class="text-[11px] text-muted mb-2">{groupDesc(g)}</p>
 								{/if}
 								<div class="flex items-center gap-3 text-[10px] text-secondary">
 									<span>{$t('groups.members')}: {g.member_count}</span>
@@ -438,48 +522,58 @@
 
 <!-- Assign Groups Modal -->
 {#if assignGroupsUser}
-	<Modal title={$t('groups.assignGroups') + ': ' + assignGroupsUser.username} onclose={() => { assignGroupsUser = null; assignDropdownOpen = false; }}>
-		<div class="space-y-3">
-			<div class="relative">
-				<button
-					class="w-full flex items-center gap-2.5 h-9 px-3 text-xs rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-3)] text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all cursor-pointer"
-					onclick={(e) => { e.stopPropagation(); assignDropdownOpen = !assignDropdownOpen; }}
-				>
-					{#if assignGroupIds.length > 0}
-						<div class="flex flex-wrap gap-1 flex-1">
-							{#each groups.filter(g => assignGroupIds.includes(g.id)) as g}
-								<span class="px-1.5 py-0.5 rounded text-[9px] font-medium text-white" style="background-color: {g.color || '#6c5ce7'}">{g.name}</span>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4" onclick={(e) => { if (e.target === e.currentTarget) { assignGroupsUser = null; assignDropdownOpen = false; } }}>
+		<div class="border border-[var(--border)] rounded-t-[var(--radius-xl)] sm:rounded-[var(--radius-xl)] w-full sm:max-w-lg shadow-[var(--shadow-lg)]" style="overflow:visible; background:var(--glass-bg); backdrop-filter:blur(20px) saturate(150%); -webkit-backdrop-filter:blur(20px) saturate(150%)">
+			<div class="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+				<h3 class="text-[15px] font-semibold text-[var(--text)]">{$t('groups.assignGroups')}: {assignGroupsUser.username}</h3>
+				<button class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all" onclick={() => { assignGroupsUser = null; assignDropdownOpen = false; }}>
+					<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				</button>
+			</div>
+			<div class="p-5 space-y-3">
+				<div class="relative">
+					<button
+						class="w-full flex items-center gap-2.5 h-9 px-3 text-xs rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-3)] text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all cursor-pointer"
+						onclick={(e) => { e.stopPropagation(); assignDropdownOpen = !assignDropdownOpen; }}
+					>
+						{#if assignGroupIds.length > 0}
+							<div class="flex flex-wrap gap-1 flex-1">
+								{#each groups.filter(g => assignGroupIds.includes(g.id)) as g}
+									<span class="px-1.5 py-0.5 rounded text-[9px] font-medium text-white" style="background-color: {g.color || '#6c5ce7'}">{g.name}</span>
+								{/each}
+							</div>
+						{:else}
+							<span class="text-muted">{$t('groups.assignGroups')}</span>
+						{/if}
+						<svg class="w-3.5 h-3.5 text-muted shrink-0 ml-auto transition-transform duration-200 {assignDropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
+					{#if assignDropdownOpen}
+						<div class="absolute left-0 right-0 mt-1.5 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[1100] py-1.5">
+							{#each groups as g}
+								<button
+									class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
+									{assignGroupIds.includes(g.id) ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
+									onclick={() => toggleGroupAssign(g.id)}
+								>
+									<span class="w-3 h-3 rounded-full shrink-0" style="background-color: {g.color || '#6c5ce7'}"></span>
+									<span class="truncate font-medium">{g.name}</span>
+									{#if assignGroupIds.includes(g.id)}
+										<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{/if}
+								</button>
 							{/each}
 						</div>
-					{:else}
-						<span class="text-muted">{$t('groups.assignGroups')}</span>
 					{/if}
-					<svg class="w-3.5 h-3.5 text-muted shrink-0 ml-auto transition-transform duration-200 {assignDropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-				</button>
-				{#if assignDropdownOpen}
-					<div class="absolute left-0 right-0 mt-1.5 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 py-1.5">
-						{#each groups as g}
-							<button
-								class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
-								{assignGroupIds.includes(g.id) ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
-								onclick={() => toggleGroupAssign(g.id)}
-							>
-								<span class="w-3 h-3 rounded-full shrink-0" style="background-color: {g.color || '#6c5ce7'}"></span>
-								<span class="truncate font-medium">{g.name}</span>
-								{#if assignGroupIds.includes(g.id)}
-									<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
+				</div>
 			</div>
-		</div>
-		<div class="flex justify-end gap-2 mt-4">
+			<div class="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2">
 			<Button variant="danger" size="sm" onclick={() => { assignGroupsUser = null; assignDropdownOpen = false; }}>{$t('common.cancel')}</Button>
 			<Button variant="primary" size="sm" onclick={saveGroupAssignment}>{$t('common.save')}</Button>
 		</div>
-	</Modal>
+	</div>
+	</div>
 {/if}
 
 <!-- Create Group Modal -->
@@ -527,36 +621,77 @@
 
 <!-- Edit Group Permissions Modal -->
 {#if editGroup}
-	<Modal title={$t('groups.permissions') + ': ' + editGroup.name} onclose={() => editGroup = null}>
-		<div class="space-y-4 max-h-[60vh] overflow-y-auto">
-			<div>
-				<div class="flex items-center justify-between mb-2">
-					<h4 class="text-xs font-semibold text-primary">{$t('groups.pagePermissions')}</h4>
-					<button class="text-[10px] text-accent hover:underline" onclick={() => toggleAllPerms(allPagePerms)}>Alle</button>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-[1000] p-0 sm:p-4" onclick={(e) => { if (e.target === e.currentTarget) editGroup = null; }}>
+		<div class="border border-[var(--border)] rounded-t-[var(--radius-xl)] sm:rounded-[var(--radius-xl)] w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col shadow-[var(--shadow-lg)]" style="background:var(--glass-bg); backdrop-filter:blur(20px) saturate(150%); -webkit-backdrop-filter:blur(20px) saturate(150%)">
+			<div class="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] shrink-0">
+				<div class="flex items-center gap-2">
+					<span class="w-3 h-3 rounded-full" style="background-color: {editGroup.color || '#6c5ce7'}"></span>
+					<h3 class="text-[15px] font-semibold text-[var(--text)]">{$t('groups.permissions')}: {editGroup.name}</h3>
 				</div>
-				<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-					{#each allPagePerms as p}
-						<CustomCheckbox checked={editPerms.includes(p.key)} onchange={() => togglePerm(p.key)} label={p.label} />
-					{/each}
+				<div class="flex items-center gap-2">
+					<button class="px-2 py-1 text-[10px] font-medium rounded-md bg-[var(--accent-bg)] text-accent hover:bg-[var(--accent)]/20 transition" onclick={selectAllPerms}>Alle</button>
+					<button class="px-2 py-1 text-[10px] font-medium rounded-md bg-[var(--bg-hover)] text-muted hover:text-primary transition" onclick={selectNonePerms}>Keine</button>
+					<button class="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-light)] transition-all" onclick={() => editGroup = null}>
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					</button>
 				</div>
 			</div>
-			<div>
-				<div class="flex items-center justify-between mb-2">
-					<h4 class="text-xs font-semibold text-primary">{$t('groups.actionPermissions')}</h4>
-					<button class="text-[10px] text-accent hover:underline" onclick={() => toggleAllPerms(allActionPerms)}>Alle</button>
-				</div>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-					{#each allActionPerms as p}
-						<CustomCheckbox checked={editPerms.includes(p.key)} onchange={() => togglePerm(p.key)} label={p.label} />
+			<div class="flex-1 overflow-y-auto px-5 py-3">
+				<div class="space-y-1">
+					{#each permSections as section}
+						{@const pageActive = editPerms.includes(section.page)}
+						{@const actionCount = section.actions.filter(a => editPerms.includes(a.key)).length}
+						{@const isExpanded = expandedSections.has(section.page)}
+						<div class="border border-theme rounded-lg overflow-hidden {pageActive ? 'border-[var(--accent)]/30' : ''}">
+							<div class="flex items-center gap-3 px-3 py-2.5 bg-[var(--bg-0)] {section.actions.length > 0 ? 'cursor-pointer' : ''}" onclick={() => section.actions.length > 0 && toggleSection(section.page)}>
+								<CustomCheckbox checked={pageActive} onchange={() => togglePageWithSuggestions(section.page, section.actions)} />
+								<span class="text-sm">{section.icon}</span>
+								<span class="text-xs font-medium text-primary flex-1">{section.label}</span>
+								{#if section.actions.length > 0}
+									<span class="text-[9px] text-muted px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">{actionCount}/{section.actions.length}</span>
+									<svg class="w-3 h-3 text-muted transition-transform {isExpanded ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+								{/if}
+							</div>
+							{#if isExpanded && section.actions.length > 0}
+								<div class="px-3 py-2 border-t border-theme bg-card">
+									<div class="flex items-center justify-between ml-8 mb-1.5">
+										<span class="text-[9px] text-muted uppercase tracking-wider">{$t('groups.actionPermissions')}</span>
+										<button class="px-2 py-0.5 text-[9px] font-medium rounded-md transition {section.actions.every(a => editPerms.includes(a.key)) ? 'bg-[var(--red-bg)] text-[var(--red)]' : 'bg-[var(--accent-bg)] text-accent'}" onclick={() => toggleAllSectionActions(section.page, section.actions)}>
+											{section.actions.every(a => editPerms.includes(a.key)) ? 'Keine' : 'Alle'}
+										</button>
+									</div>
+									<div class="grid grid-cols-2 gap-1.5 ml-8">
+										{#each section.actions as action}
+											<CustomCheckbox checked={editPerms.includes(action.key)} onchange={() => togglePerm(action.key)} label={action.label} size="sm" />
+										{/each}
+									</div>
+								</div>
+							{/if}
+						</div>
 					{/each}
+				</div>
+
+				<!-- System permissions -->
+				<div class="mt-3 pt-3 border-t border-theme">
+					<h4 class="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">System</h4>
+					<div class="grid grid-cols-2 gap-1.5">
+						{#each systemPerms as p}
+							<CustomCheckbox checked={editPerms.includes(p.key)} onchange={() => togglePerm(p.key)} label={p.label} />
+						{/each}
+					</div>
+				</div>
+			</div>
+			<div class="px-5 py-3 border-t border-[var(--border)] flex justify-between items-center shrink-0">
+				<span class="text-[10px] text-muted">{editPerms.length} {$t('groups.permissions')}</span>
+				<div class="flex gap-2">
+					<Button variant="danger" size="sm" onclick={() => editGroup = null}>{$t('common.cancel')}</Button>
+					<Button variant="primary" size="sm" onclick={saveGroupPerms}>{$t('common.save')}</Button>
 				</div>
 			</div>
 		</div>
-		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="danger" size="sm" onclick={() => editGroup = null}>{$t('common.cancel')}</Button>
-			<Button variant="primary" size="sm" onclick={saveGroupPerms}>{$t('common.save')}</Button>
-		</div>
-	</Modal>
+	</div>
 {/if}
 
 {#if confirmDlg}

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { toasts } from '$lib/stores/toast';
@@ -11,6 +12,10 @@
 	import Button from '$lib/components/ui/Button.svelte';
 
 	const containerId = $derived($page.params.id);
+
+	$effect(() => {
+		if (!$canSeePage('page.containers') || !$canDoAction('action.container_inspect')) goto('/profile');
+	});
 
 	let data = $state<any>(null);
 	let loading = $state(true);
@@ -87,19 +92,27 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2 flex-wrap">
-			{#if !running}
-				<button onclick={() => containerAction('start')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--green)] text-[var(--green)] hover:bg-[var(--green)]/8 transition">
-					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>{$t('containers.start')}</button>
-			{:else}
-				<button onclick={() => containerAction('stop')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--red)] text-[var(--red)] hover:bg-[var(--red)]/8 transition">
-					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>{$t('containers.stop')}</button>
+			{#if $canDoAction('action.container_start_stop')}
+				{#if !running}
+					<button onclick={() => containerAction('start')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--green)] text-[var(--green)] hover:bg-[var(--green)]/8 transition">
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>{$t('containers.start')}</button>
+				{:else}
+					<button onclick={() => containerAction('stop')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--red)] text-[var(--red)] hover:bg-[var(--red)]/8 transition">
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>{$t('containers.stop')}</button>
+				{/if}
 			{/if}
-			<button onclick={() => containerAction('restart')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--yellow)] text-[var(--yellow)] hover:bg-[var(--yellow)]/8 transition">
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/></svg>{$t('containers.restart')}</button>
-			<a href="/containers/{containerId}/logs" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/8 transition no-underline">
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{$t('containers.logs')}</a>
-			<a href="/containers/{containerId}/terminal" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--green)] text-[var(--green)] hover:bg-[var(--green)]/8 transition no-underline">
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>{$t('containers.terminal')}</a>
+			{#if $canDoAction('action.container_restart')}
+				<button onclick={() => containerAction('restart')} class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--yellow)] text-[var(--yellow)] hover:bg-[var(--yellow)]/8 transition">
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/></svg>{$t('containers.restart')}</button>
+			{/if}
+			{#if $canDoAction('action.container_logs')}
+				<a href="/containers/{containerId}/logs" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/8 transition no-underline">
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{$t('containers.logs')}</a>
+			{/if}
+			{#if $canDoAction('action.container_terminal')}
+				<a href="/containers/{containerId}/terminal" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--green)] text-[var(--green)] hover:bg-[var(--green)]/8 transition no-underline">
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>{$t('containers.terminal')}</a>
+			{/if}
 		</div>
 	</div>
 

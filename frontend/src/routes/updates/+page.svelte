@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
@@ -10,6 +12,10 @@
 	import type { UpdateCheckResult } from '$lib/api/types';
 
 	interface CheckStatus { running: boolean; total_checked: number; total_outdated: number; last_check?: string; }
+
+	$effect(() => {
+		if (!$canSeePage('page.updates')) goto('/profile');
+	});
 
 	let results = $state<UpdateCheckResult[]>([]);
 	let status = $state<CheckStatus>({ running: false, total_checked: 0, total_outdated: 0 });
@@ -140,12 +146,14 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
+			{#if $canDoAction('action.container_recreate')}
 			<Button variant="primary" size="sm" onclick={runCheck} disabled={status.running} loading={status.running}>
 				{#if !status.running}<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>{/if}
 				{status.running ? $t('updates.checkRunning') : $t('updates.checkNow')}
 			</Button>
 			{#if results.length > 0 && !status.running}
 				<Button variant="danger" size="sm" onclick={clearReport}>{$t('updates.clearReport')}</Button>
+			{/if}
 			{/if}
 		</div>
 	</div>

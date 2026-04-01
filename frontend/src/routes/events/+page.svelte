@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -8,6 +10,10 @@
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import { formatDateTimeSmart } from '$lib/utils/format';
 	import type { ContainerEvent, EventsResponse } from '$lib/api/types';
+
+	$effect(() => {
+		if (!$canSeePage('page.events')) goto('/profile');
+	});
 
 	let events = $state<ContainerEvent[]>([]);
 	let loading = $state(true);

@@ -70,6 +70,9 @@ impl Database {
         conn.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT", []).ok();
         conn.execute("ALTER TABLE users ADD COLUMN backup_codes TEXT", []).ok();
 
+        // Migration: add paused column to environments
+        conn.execute("ALTER TABLE environments ADD COLUMN paused INTEGER NOT NULL DEFAULT 0", []).ok();
+
         // Migration: add hash column to audit_log
         conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT", []).ok();
 
@@ -300,18 +303,20 @@ impl Database {
     pub fn get_environments(&self) -> Vec<EnvironmentInfo> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, name, url, agent_token, is_local FROM environments ORDER BY is_local DESC, name")
+            .prepare("SELECT id, name, url, agent_token, is_local, COALESCE(paused, 0) FROM environments ORDER BY is_local DESC, name")
             .unwrap();
 
         stmt.query_map([], |row| {
             let is_local: i32 = row.get(4)?;
+            let paused: i32 = row.get(5)?;
             Ok(EnvironmentInfo {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 url: row.get(2)?,
                 agent_token: row.get(3)?,
                 is_local: is_local != 0,
-                status: String::from("unknown"),
+                status: if paused != 0 { "paused".to_string() } else { "unknown".to_string() },
+                paused: paused != 0,
             })
         })
         .unwrap()
@@ -322,20 +327,28 @@ impl Database {
     pub fn get_environment(&self, id: &str) -> Option<EnvironmentInfo> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, name, url, agent_token, is_local FROM environments WHERE id = ?1",
+            "SELECT id, name, url, agent_token, is_local, COALESCE(paused, 0) FROM environments WHERE id = ?1",
             params![id],
             |row| {
                 let is_local: i32 = row.get(4)?;
+                let paused: i32 = row.get(5)?;
                 Ok(EnvironmentInfo {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     url: row.get(2)?,
                     agent_token: row.get(3)?,
                     is_local: is_local != 0,
-                    status: String::from("unknown"),
+                    status: if paused != 0 { "paused".to_string() } else { "unknown".to_string() },
+                    paused: paused != 0,
                 })
             },
         ).ok()
+    }
+
+    pub fn toggle_env_paused(&self, id: &str, paused: bool) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE environments SET paused = ?1 WHERE id = ?2", params![paused as i32, id])?;
+        Ok(())
     }
 
     pub fn update_environment(&self, id: &str, name: &str, url: &str) -> Result<(), rusqlite::Error> {
@@ -648,25 +661,90 @@ impl Database {
 
     pub fn seed_default_group(&self) {
         let conn = self.conn.lock().unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM groups WHERE is_default = 1", [], |row| row.get(0)).unwrap_or(0);
-        if count == 0 {
-            conn.execute("INSERT INTO groups (name, description, is_default) VALUES ('DockPit', 'Standardgruppe mit vollen Rechten', 1)", []).ok();
-            // Add all permissions to default group
-            if let Ok(group_id) = conn.query_row("SELECT id FROM groups WHERE is_default = 1", [], |row| row.get::<_, i64>(0)) {
-                let all_perms = vec![
-                    "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
-                    "page.networks", "page.monitoring", "page.health", "page.events", "page.updates",
-                    "page.vulnerabilities", "page.audit", "page.host_terminal", "page.environments", "page.settings",
-                    "action.container_start_stop", "action.container_restart", "action.container_recreate",
-                    "action.container_delete", "action.container_logs", "action.container_terminal",
-                    "action.stack_deploy_stop", "action.stack_create_delete", "action.stack_migrate",
-                    "action.image_pull_delete", "action.volume_delete", "action.network_delete",
-                    "action.backup", "action.user_management",
-                ];
-                for perm in all_perms {
-                    conn.execute("INSERT OR IGNORE INTO group_permissions (group_id, permission) VALUES (?1, ?2)", params![group_id, perm]).ok();
+
+        // DockPit default group: minimal (dashboard only) — assigned to new "user" role users
+        let dockpit_perms = vec![
+            "page.dashboard",
+        ];
+
+        let admin_perms = vec![
+            "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+            "page.networks", "page.monitoring", "page.health", "page.events", "page.updates",
+            "page.vulnerabilities", "page.audit", "page.host_terminal", "page.environments", "page.settings",
+            "action.container_start_stop", "action.container_restart", "action.container_recreate",
+            "action.container_delete", "action.container_logs", "action.container_terminal",
+            "action.container_inspect", "action.container_migrate", "action.container_rollback",
+            "action.stack_deploy_stop", "action.stack_create_delete", "action.stack_edit",
+            "action.stack_migrate",
+            "action.image_pull_delete", "action.volume_delete", "action.network_delete",
+            "action.backup", "action.server_switch",
+            "action.vuln_scan", "action.env_edit", "action.env_connect",
+            "action.docker_login", "action.scheduled_jobs", "action.host_terminal_connect",
+            "action.settings_general", "action.settings_updates", "action.settings_webhooks",
+            "action.settings_email", "action.settings_alerts",
+        ];
+
+        let editor_perms = vec![
+            "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+            "page.networks", "page.monitoring", "page.health",
+            "action.container_start_stop", "action.container_restart",
+            "action.container_logs", "action.container_terminal", "action.container_inspect",
+            "action.stack_deploy_stop",
+            "action.server_switch",
+        ];
+
+        let viewer_perms = vec![
+            "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+            "page.networks", "page.monitoring", "page.health",
+            "action.container_inspect",
+            "action.server_switch",
+        ];
+
+        // All permissions for reference (used by Admin group)
+        let all_perms = vec![
+            "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+            "page.networks", "page.monitoring", "page.health", "page.events", "page.updates",
+            "page.vulnerabilities", "page.audit", "page.host_terminal", "page.environments", "page.settings",
+            "action.container_start_stop", "action.container_restart", "action.container_recreate",
+            "action.container_delete", "action.container_logs", "action.container_terminal",
+            "action.container_inspect", "action.container_migrate", "action.container_rollback",
+            "action.stack_deploy_stop", "action.stack_create_delete", "action.stack_edit",
+            "action.stack_migrate",
+            "action.image_pull_delete", "action.volume_delete", "action.network_delete",
+            "action.backup", "action.user_management", "action.server_switch",
+            "action.vuln_scan", "action.env_edit", "action.env_connect",
+            "action.docker_login", "action.scheduled_jobs", "action.host_terminal_connect",
+            "action.settings_general", "action.settings_updates", "action.settings_webhooks",
+            "action.settings_email", "action.settings_alerts",
+        ];
+
+        // Seed role-based default groups
+        let defaults = vec![
+            ("DockPit", "Standardgruppe für neue Benutzer (nur Dashboard)", "#6c5ce7", true, &dockpit_perms),
+            ("Admin", "Volle Docker-Verwaltung, Einstellungen, Backups", "#0984e3", false, &admin_perms),
+            ("Editor", "Kann Container starten/stoppen und Stacks deployen", "#00b894", false, &editor_perms),
+            ("Viewer", "Nur-Lese-Zugriff auf Dashboards und Monitoring", "#636e72", false, &viewer_perms),
+        ];
+
+        for (name, desc, color, is_default, perms) in defaults {
+            let exists: i64 = conn.query_row("SELECT COUNT(*) FROM groups WHERE name = ?1", params![name], |row| row.get(0)).unwrap_or(0);
+            if exists > 0 { continue; } // Don't overwrite user-customized groups
+            conn.execute("INSERT INTO groups (name, description, color, is_default) VALUES (?1, ?2, ?3, ?4)",
+                params![name, desc, color, is_default as i32]).ok();
+            if let Ok(gid) = conn.query_row("SELECT id FROM groups WHERE name = ?1", params![name], |row| row.get::<_, i64>(0)) {
+                for perm in perms {
+                    conn.execute("INSERT OR IGNORE INTO group_permissions (group_id, permission) VALUES (?1, ?2)", params![gid, perm]).ok();
                 }
             }
+        }
+
+        // Auto-assign existing users without groups to their matching default group
+        let role_group_map = vec![("admin", "Admin"), ("editor", "Editor"), ("viewer", "Viewer"), ("user", "DockPit")];
+        for (role, group_name) in role_group_map {
+            conn.execute(
+                "INSERT OR IGNORE INTO user_groups (user_id, group_id) SELECT u.id, g.id FROM users u, groups g WHERE u.role = ?1 AND g.name = ?2 AND u.id NOT IN (SELECT user_id FROM user_groups)",
+                params![role, group_name],
+            ).ok();
         }
     }
 

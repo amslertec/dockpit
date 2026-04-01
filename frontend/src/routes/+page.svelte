@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { environments } from '$lib/stores/environment';
 	import { widgets, syncFromBackend, type WidgetConfig, getTabs, addTab, renameTab, removeTab, exportDashboard, importDashboard, type DashboardTab } from '$lib/stores/widgets';
@@ -55,6 +58,10 @@
 		{ type: 'iframe', label: $t('dashboard.iframe'), icon: '\u{1F5BC}' },
 	];
 
+	$effect(() => {
+		if (!$canSeePage('page.dashboard')) goto('/profile');
+	});
+
 	const filteredWidgets = $derived($widgets.filter(w => (w.tabId || 'default') === activeTabId));
 
 	function positionAddMenu() {
@@ -90,7 +97,10 @@
 
 	onMount(async () => {
 		const r = await api.get<ServerOverview[]>('/home/servers');
-		if (r.success && r.data) servers = r.data;
+		if (r.success && r.data) {
+			const canSwitch = get(canDoAction)('action.server_switch');
+			servers = canSwitch ? r.data : r.data.slice(0, 1);
+		}
 		loading = false;
 		// Load dashboard config from backend (if available), then init
 		const synced = await syncFromBackend();

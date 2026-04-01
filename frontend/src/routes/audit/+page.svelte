@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -7,6 +9,10 @@
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import { formatDateTime } from '$lib/utils/format';
 	import type { AuditEntry, AuditResponse } from '$lib/api/types';
+
+	$effect(() => {
+		if (!$canSeePage('page.audit')) goto('/profile');
+	});
 
 	let entries = $state<AuditEntry[]>([]);
 	let loading = $state(true);
@@ -45,6 +51,9 @@
 		{ value: 'backup_create', label: $t('audit.backupCreate') },
 		{ value: 'template_create', label: $t('audit.templateCreate') },
 		{ value: 'login_blocked', label: $t('audit.loginBlocked') },
+		{ value: 'group_create', label: $t('audit.groupCreate') },
+		{ value: 'group_delete', label: $t('audit.groupDelete') },
+		{ value: 'stack_migrate', label: $t('audit.stackMigrate') },
 	]);
 
 	onMount(() => {
@@ -126,6 +135,9 @@
 			backup_create: 'bg-[var(--green)]/15 text-[var(--green)] border border-[var(--green)]/25',
 			template_create: 'bg-[var(--purple)]/15 text-[var(--purple)] border border-[var(--purple)]/25',
 			login_blocked: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			group_create: 'bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25',
+			group_delete: 'bg-[var(--red)]/15 text-[var(--red)] border border-[var(--red)]/25',
+			stack_migrate: 'bg-cyan-400/15 text-cyan-400 border border-cyan-400/25',
 		};
 		return map[action] || 'bg-[var(--bg-hover)] text-[var(--text-secondary)] border border-[var(--border)]';
 	}
@@ -159,6 +171,9 @@
 			backup_create: 'audit.backupCreate',
 			template_create: 'audit.templateCreate',
 			login_blocked: 'audit.loginBlocked',
+			group_create: 'audit.groupCreate',
+			group_delete: 'audit.groupDelete',
+			stack_migrate: 'audit.stackMigrate',
 		};
 		const key = keyMap[action];
 		if (key) {

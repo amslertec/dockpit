@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { environments } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
 	import Button from '$lib/components/ui/Button.svelte';
 	import type { EnvironmentInfo } from '$lib/api/types';
+
+	$effect(() => {
+		if (!$canSeePage('page.host_terminal')) goto('/profile');
+	});
 
 	let selectedServer = $state('');
 	let connected = $state(false);
@@ -113,6 +119,7 @@
 	</div>
 
 	<div class:hidden={connected}>
+		{#if $canDoAction('action.host_terminal_connect')}
 		<div class="bg-card border border-theme rounded-lg p-5">
 			<h3 class="text-sm font-semibold text-primary mb-3">{$t('hostTerminal.selectServer')}</h3>
 			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
@@ -143,6 +150,11 @@
 				{connecting ? $t('hostTerminal.connecting') : $t('hostTerminal.connect')}
 			</Button>
 		</div>
+		{:else}
+		<div class="bg-card border border-theme rounded-lg p-5">
+			<p class="text-sm text-muted">Keine Berechtigung</p>
+		</div>
+		{/if}
 	</div>
 
 	<div class:hidden={!connected}>

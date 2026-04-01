@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { toasts } from '$lib/stores/toast';
 	import { t } from '$lib/i18n';
@@ -9,6 +11,10 @@
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+
+	$effect(() => {
+		if (!$canSeePage('page.settings')) goto('/profile');
+	});
 
 	let activeTab = $state(0);
 	let settings = $state<Record<string, string>>({});
@@ -240,6 +246,7 @@
 		<div class="p-5">
 			<!-- General -->
 			{#if activeTab === 0}
+				{#if $canDoAction('action.settings_general')}
 				<h3 class="text-sm font-semibold text-[var(--text)] mb-2">{$t('settings.timezone')}</h3>
 				<p class="text-xs text-[var(--text-secondary)] mb-4">{$t('settings.timezoneDesc')}</p>
 				<div class="max-w-md space-y-4">
@@ -260,8 +267,17 @@
 					<p class="text-[10px] text-[var(--text-muted)] mt-2">{$t('settings.prometheusHint')}</p>
 				</div>
 
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
+
 			<!-- Update Monitor -->
 			{:else if activeTab === 1}
+				{#if $canDoAction('action.settings_updates')}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.autoCheck')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.autoCheckDesc')}</p>
 
@@ -289,8 +305,17 @@
 					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
 				</div>
 
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
+
 			<!-- Webhooks -->
 			{:else if activeTab === 2}
+				{#if $canDoAction('action.settings_webhooks')}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.webhookTitle')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.webhookDesc')}</p>
 
@@ -310,8 +335,17 @@
 					{/if}
 				</div>
 
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
+
 			<!-- Email -->
 			{:else if activeTab === 3}
+				{#if $canDoAction('action.settings_email')}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.emailTitle')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.emailDesc')}</p>
 
@@ -332,8 +366,17 @@
 					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
 				</div>
 
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
+
 			<!-- Backup -->
 			{:else if activeTab === 4}
+				{#if $canDoAction('action.backup')}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('settings.backupTitle')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('settings.backupDesc')}</p>
 
@@ -382,7 +425,9 @@
 
 					<div class="flex gap-2">
 						<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
-						<Button variant="success" size="md" onclick={createBackup} loading={creatingBackup}>{$t('settings.backupNow')}</Button>
+						{#if $canDoAction('action.backup')}
+							<Button variant="success" size="md" onclick={createBackup} loading={creatingBackup}>{$t('settings.backupNow')}</Button>
+						{/if}
 					</div>
 				</div>
 
@@ -413,12 +458,14 @@
 													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" title={$t('settings.backupDownload')} onclick={() => downloadBackup(b.filename)}>
 															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 														</button>
+													{#if $canDoAction('action.backup')}
 													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" title={$t('settings.backupRestore')} onclick={() => confirm = { message: $t('settings.backupRestoreConfirm'), action: () => { confirm = null; restoreBackup(b.filename); } }}>
 															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg>
 														</button>
 													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('settings.backupDelete')} onclick={() => confirm = { message: $t('settings.backupDeleteConfirm'), action: () => { confirm = null; deleteBackup(b.filename); } }}>
 															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 														</button>
+													{/if}
 												</div>
 											</td>
 										</tr>
@@ -440,8 +487,17 @@
 						{/if}
 					</div>
 				</div>
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
+
 			<!-- Alerts -->
 			{:else if activeTab === 5}
+				{#if $canDoAction('action.settings_alerts')}
 				<h3 class="text-sm font-semibold text-primary mb-2">{$t('alerts.title')}</h3>
 				<p class="text-xs text-secondary mb-4">{$t('alerts.noRules')}</p>
 
@@ -505,6 +561,13 @@
 					</div>
 				{:else}
 					<Button variant="primary" size="sm" onclick={() => showAddRule = true}>{$t('alerts.addRule')}</Button>
+				{/if}
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
 				{/if}
 			{/if}
 		</div>

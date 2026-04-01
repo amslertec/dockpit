@@ -11,7 +11,7 @@
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
-	import { canManageDocker, canEditContainers } from '$lib/stores/auth';
+	import { canManageDocker, canEditContainers, canDoAction, canSeePage } from '$lib/stores/auth';
 	import { t } from '$lib/i18n';
 	import { favorites, type FavoriteContainer } from '$lib/stores/favorites';
 	import type { ContainerInfo, ImageUpdateCheck } from '$lib/api/types';
@@ -72,6 +72,10 @@
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 	const allSelected = $derived(paged.length > 0 && paged.every(c => selected.has(c.id)));
 	const someSelected = $derived(selected.size > 0);
+
+	$effect(() => {
+		if (!$canSeePage('page.containers')) goto('/profile');
+	});
 
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
@@ -335,7 +339,7 @@
 						<span class="text-[10px] text-muted">—</span>
 					{/if}
 					<div class="flex gap-1">
-						{#if $canEditContainers && fc}
+						{#if ($canEditContainers || $canDoAction('action.container_start_stop')) && fc}
 							{#if fc.state !== 'running'}
 								<button class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition" onclick={() => action(fav.id, 'start')} title={$t('containers.start')}>
 									<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
@@ -344,9 +348,11 @@
 									<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
 							{/if}
 						{/if}
-						{#if $canManageDocker}
+						{#if $canManageDocker || $canDoAction('action.container_logs')}
 							<a href="/containers/{fav.id}/logs" class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-primary hover:border-light transition no-underline" title={$t('containers.logs')}>
 								<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></a>
+						{/if}
+						{#if $canManageDocker || $canDoAction('action.container_terminal')}
 							<a href="/containers/{fav.id}/terminal" class="w-6 h-6 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-secondary hover:text-[var(--green)] hover:border-[var(--green)] transition no-underline" title={$t('containers.terminal')}>
 								<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></a>
 						{/if}
@@ -420,15 +426,23 @@
 		</div>
 	</div>
 
-	{#if someSelected && $canEditContainers}
+	{#if someSelected && ($canEditContainers || $canDoAction('action.container_start_stop'))}
 		<div class="px-4 py-2 border-b border-theme bg-1 flex items-center gap-2 flex-wrap">
 			<span class="text-xs text-secondary">{$t('common.selected', { count: selected.size })}</span>
 			<div class="flex gap-1.5 ml-2">
+				{#if $canEditContainers || $canDoAction('action.container_start_stop')}
 				<Button variant="success" size="sm" onclick={() => bulkAction('start')} disabled={bulkRunning}>{$t('containers.start')}</Button>
 				<Button variant="warning" size="sm" onclick={() => bulkAction('stop')} disabled={bulkRunning}>{$t('containers.stop')}</Button>
+				{/if}
+				{#if $canEditContainers || $canDoAction('action.container_restart')}
 				<Button variant="primary" size="sm" onclick={() => bulkAction('restart')} disabled={bulkRunning}>{$t('containers.restart')}</Button>
+				{/if}
+				{#if $canManageDocker || $canDoAction('action.container_recreate')}
 				<Button variant="purple" size="sm" onclick={() => bulkAction('recreate')} disabled={bulkRunning}>{$t('containers.recreate')}</Button>
+				{/if}
+				{#if $canManageDocker || $canDoAction('action.container_delete')}
 				<Button variant="danger" size="sm" onclick={() => bulkAction('remove')} disabled={bulkRunning}>{$t('containers.remove')}</Button>
+				{/if}
 			</div>
 			{#if bulkRunning}<div class="w-4 h-4 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin ml-2"></div>{/if}
 		</div>
@@ -441,7 +455,7 @@
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2"></th>
-					<th class="w-10 px-4 py-2"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
+					{#if $canDoAction('action.container_start_stop') || $canDoAction('action.container_delete')}<th class="w-10 px-4 py-2"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('stack_name')}>Stack{sortIndicator('stack_name')}</th>
 					<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('image')}>Image{sortIndicator('image')}</th>
@@ -459,9 +473,13 @@
 									<svg class="w-4 h-4" viewBox="0 0 24 24" fill="{$favorites.some(f => f.id === c.id) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
 								</button>
 							</td>
-							<td class="w-10 px-4 py-2.5"><CustomCheckbox checked={selected.has(c.id)} onchange={() => toggleSelect(c.id)} size="sm" /></td>
+							{#if $canDoAction('action.container_start_stop') || $canDoAction('action.container_delete')}<td class="w-10 px-4 py-2.5"><CustomCheckbox checked={selected.has(c.id)} onchange={() => toggleSelect(c.id)} size="sm" /></td>{/if}
 							<td class="px-4 py-2.5">
-								<a href="/containers/{c.id}" class="text-sm font-medium text-primary hover:text-[var(--accent)] transition no-underline">{c.name}</a>
+								{#if $canDoAction('action.container_inspect')}
+									<a href="/containers/{c.id}" class="text-sm font-medium text-primary hover:text-[var(--accent)] transition no-underline">{c.name}</a>
+								{:else}
+									<span class="text-sm font-medium text-primary">{c.name}</span>
+								{/if}
 								<div class="text-[10px] font-mono text-muted">{truncateId(c.id)}</div>
 							</td>
 							<td class="px-4 py-2.5 hidden lg:table-cell">
@@ -494,8 +512,8 @@
 							<td class="px-4 py-2.5 text-[11px] text-secondary hidden xl:table-cell">{formatDate(c.created)}</td>
 							<td class="px-4 py-2.5">
 								<div class="flex gap-1">
-									<!-- Start/Stop (editor+) -->
-									{#if $canEditContainers}
+									<!-- Start/Stop -->
+									{#if $canEditContainers || $canDoAction('action.container_start_stop')}
 										{#if c.state !== 'running'}
 											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition" onclick={() => action(c.id, 'start')} title={$t('containers.start')}>
 												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
@@ -503,21 +521,36 @@
 											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => action(c.id, 'stop')} title={$t('containers.stop')}>
 												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
 										{/if}
+									{/if}
+									{#if $canEditContainers || $canDoAction('action.container_restart')}
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => action(c.id, 'restart')} title={$t('containers.restart')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/></svg></button>
 									{/if}
-									<!-- Recreate/Logs/Terminal/Delete (admin+) -->
-									{#if $canManageDocker}
+									<!-- Recreate -->
+									{#if $canManageDocker || $canDoAction('action.container_recreate')}
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" onclick={() => recreate(c.id)} title={$t('containers.recreate')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+									{/if}
+									<!-- Logs -->
+									{#if $canManageDocker || $canDoAction('action.container_logs')}
 										<a href="/containers/{c.id}/logs" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition no-underline" title={$t('containers.logs')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></a>
+									{/if}
+									<!-- Terminal -->
+									{#if $canManageDocker || $canDoAction('action.container_terminal')}
 										<a href="/containers/{c.id}/terminal" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition no-underline" title={$t('containers.terminal')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></a>
+									{/if}
+									<!-- Rollback/Migrate/Delete (admin+ or specific permissions) -->
+									{#if $canManageDocker || $canDoAction('action.container_rollback')}
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--yellow)] hover:border-[var(--yellow)]/40 hover:bg-[var(--yellow)]/8 transition" onclick={async () => { rollbackModal = { id: c.id, name: c.name }; await loadSnapshots(c.name); }} title={$t('containers.rollback')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9"/><polyline points="3 3 3 9 9 9"/><path d="M3 9l3-3"/></svg></button>
+									{/if}
+									{#if $canManageDocker || $canDoAction('action.container_migrate')}
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => migrateModal = { id: c.id, name: c.name, image: c.image }} title={$t('containers.migrate')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+									{/if}
+									{#if $canManageDocker || $canDoAction('action.container_delete')}
 										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => action(c.id, 'remove')} title={$t('containers.remove')}>
 											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
 									{/if}

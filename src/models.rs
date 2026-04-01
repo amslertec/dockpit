@@ -202,9 +202,10 @@ pub struct EnvironmentInfo {
     pub id: String,
     pub name: String,
     pub url: String,
-    pub status: String, // online, offline
+    pub status: String, // online, offline, paused
     pub is_local: bool,
     pub agent_token: Option<String>,
+    pub paused: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -64,6 +64,7 @@ export interface EnvironmentInfo {
 	status: string;
 	is_local: boolean;
 	agent_token?: string;
+	paused?: boolean;
 }
 
 export interface SystemInfo {

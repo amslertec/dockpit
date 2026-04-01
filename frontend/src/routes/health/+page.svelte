@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -7,6 +9,10 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatDateTime } from '$lib/utils/format';
 	import type { ContainerHealth } from '$lib/api/types';
+
+	$effect(() => {
+		if (!$canSeePage('page.health')) goto('/profile');
+	});
 
 	let containers = $state<ContainerHealth[]>([]);
 	let loading = $state(true);

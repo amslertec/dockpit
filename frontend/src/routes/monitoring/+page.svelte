@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage } from '$lib/stores/auth';
 	import { statsStore, currentStats } from '$lib/stores/stats';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -60,6 +62,10 @@
 	const containerCount = $derived(($currentStats || []).length);
 
 	const hasData = $derived($currentStats && $currentStats.length > 0);
+
+	$effect(() => {
+		if (!$canSeePage('page.monitoring')) goto('/profile');
+	});
 
 	onMount(() => {
 		if ($selectedEnv) statsStore.connect($selectedEnv);

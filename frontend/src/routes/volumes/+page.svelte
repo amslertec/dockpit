@@ -7,7 +7,8 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
-	import { canManageDocker } from '$lib/stores/auth';
+	import { canManageDocker, canDoAction, canSeePage } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import type { VolumeInfo } from '$lib/api/types';
 
@@ -53,6 +54,10 @@
 	const someSelected = $derived(selected.size > 0);
 	const usedCount = $derived(volumes.filter(v => v.in_use).length);
 	const unusedCount = $derived(volumes.filter(v => !v.in_use).length);
+
+	$effect(() => {
+		if (!$canSeePage('page.volumes')) goto('/profile');
+	});
 
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
@@ -147,19 +152,21 @@
 		<div class="flex items-center gap-2 flex-wrap">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
+			{#if $canDoAction('action.volume_delete')}
 			<Button variant="danger" size="sm" loading={pruning} onclick={prune}>
 				{#if !pruning}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
 				{/if}
 				{$t('volumes.pruneUnused')}
 			</Button>
+			{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 			</Button>
 		</div>
 	</div>
 
-	{#if someSelected && $canManageDocker}
+	{#if someSelected && $canDoAction('action.volume_delete')}
 		<div class="px-4 py-2 border-b border-theme bg-1 flex items-center gap-2 flex-wrap">
 			<span class="text-xs text-secondary">{$t('common.selected', { count: selected.size })}</span>
 			<Button variant="danger" size="sm" loading={bulkRunning} onclick={bulkForceDelete}>
@@ -175,7 +182,7 @@
 		<div class="overflow-x-auto">
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
-					<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
+					{#if $canDoAction('action.volume_delete')}<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('common.name')}{sortIndicator('name')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('driver')}>{$t('volumes.driver')}{sortIndicator('driver')}</th>
@@ -185,9 +192,9 @@
 				<tbody>
 					{#each paged as v}
 						<tr class="border-b border-theme last:border-0 hover:bg-hover transition {!v.in_use ? 'opacity-70' : ''} {selected.has(v.name) ? 'bg-accent-light' : ''}">
-							<td class="w-10 px-4 py-3">
+							{#if $canDoAction('action.volume_delete')}<td class="w-10 px-4 py-3">
 								{#if !v.in_use}<CustomCheckbox checked={selected.has(v.name)} onchange={() => toggleSelect(v.name)} size="sm" />{/if}
-							</td>
+							</td>{/if}
 							<td class="px-4 py-3">
 								{#if v.in_use}
 									<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-light text-green"><span class="w-1.5 h-1.5 rounded-full bg-current"></span>{$t('volumes.inUse')}</span>
@@ -198,6 +205,7 @@
 							<td class="px-4 py-3 text-sm font-medium text-primary max-w-[250px] truncate">{v.name}</td>
 							<td class="px-4 py-3 text-xs text-secondary">{v.driver}</td>
 							<td class="px-4 py-3 text-[11px] font-mono text-muted max-w-[250px] truncate hidden md:table-cell">{v.mountpoint}</td>
+							{#if $canDoAction('action.volume_delete')}
 							<td class="px-4 py-3">
 								<div class="flex gap-1">
 									{#if v.in_use}
@@ -214,6 +222,8 @@
 									{/if}
 								</div>
 							</td>
+							{:else}<td></td>
+							{/if}
 						</tr>
 					{:else}
 						<tr><td colspan="6" class="text-center py-10 text-sm text-muted">{$t('volumes.noVolumes')}</td></tr>

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
@@ -8,6 +10,10 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatDateTime } from '$lib/utils/format';
 	import type { VulnerabilityScan, VulnScanStatus } from '$lib/api/types';
+
+	$effect(() => {
+		if (!$canSeePage('page.vulnerabilities')) goto('/profile');
+	});
 
 	let scans = $state<VulnerabilityScan[]>([]);
 	let loading = $state(true);
@@ -155,6 +161,7 @@
 				<svg class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 				{$t('common.refresh')}
 			</Button>
+			{#if $canDoAction('action.vuln_scan')}
 			<Button size="sm" variant="primary" onclick={scanAll} disabled={scanning}>
 				{#if scanning}
 					<div class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -163,6 +170,7 @@
 				{/if}
 				{$t('vuln.scanAll')}
 			</Button>
+			{/if}
 		</div>
 	</div>
 
@@ -274,6 +282,7 @@
 								</td>
 								<td class="px-4 py-3 text-xs text-[var(--text-muted)] whitespace-nowrap">{formatDateTime(scan.scanned_at)}</td>
 								<td class="px-4 py-3 text-right">
+									{#if $canDoAction('action.vuln_scan')}
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<span onclick={(e) => { e.stopPropagation(); scanImage(scan.image); }}>
@@ -281,6 +290,7 @@
 											{$t('vuln.scan')}
 										</Button>
 									</span>
+									{/if}
 								</td>
 							</tr>
 

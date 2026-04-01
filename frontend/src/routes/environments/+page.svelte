@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { canSeePage, canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { environments } from '$lib/stores/environment';
 	import { toasts } from '$lib/stores/toast';
@@ -14,6 +16,10 @@
 	import type { EnvironmentInfo, RegistryInfo, ScheduledJob } from '$lib/api/types';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
+
+	$effect(() => {
+		if (!$canSeePage('page.environments')) goto('/profile');
+	});
 
 	let activeTab = $state(0);
 	let loading = $state(true);
@@ -262,16 +268,25 @@
 										<td class="px-4 py-2.5"><Badge status={env.status} /></td>
 										<td class="px-4 py-2.5 text-xs text-secondary">{env.is_local ? $t('env.local') : $t('env.agent')}</td>
 										<td class="px-4 py-2.5">
+											{#if $canDoAction('action.env_edit')}
 											<div class="flex gap-1">
 												<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition" title={$t('common.edit')} onclick={() => openEdit(env)}>
 													<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 												</button>
 												{#if !env.is_local}
+													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme transition {env.paused ? 'text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8' : 'text-[var(--yellow)] hover:border-[var(--yellow)]/40 hover:bg-[var(--yellow)]/8'}" title={env.paused ? $t('env.resume') : $t('env.pause')} onclick={async () => { await api.put(`/environments/${env.id}/pause`, { paused: !env.paused }); loadAll(); }}>
+														{#if env.paused}
+															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+														{:else}
+															<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+														{/if}
+													</button>
 													<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" title={$t('common.delete')} onclick={() => removeServer(env.id)}>
 														<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
 													</button>
 												{/if}
 											</div>
+											{/if}
 										</td>
 									</tr>
 								{/each}
@@ -282,6 +297,7 @@
 
 			<!-- Tab 1: Connect Remote Server -->
 			{:else if activeTab === 1}
+				{#if $canDoAction('action.env_connect')}
 				<!-- Network Scan -->
 				<div class="mb-6">
 					<div class="flex items-center gap-2 mb-2">
@@ -376,8 +392,16 @@
 						</div>
 					</div>
 				</div>
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
 			<!-- Tab 2: Docker Login -->
 			{:else if activeTab === 2}
+				{#if $canDoAction('action.docker_login')}
 				<div class="mb-6">
 					<h3 class="text-sm font-semibold text-primary mb-2">{$t('env.savedLogins')}</h3>
 					<p class="text-xs text-secondary mb-4">{$t('env.registryDesc')}</p>
@@ -433,9 +457,17 @@
 						<Button variant="primary" size="md" type="submit" loading={regLoading}>{regLoading ? $t('env.loggingIn') : $t('env.loginButton')}</Button>
 					</form>
 				</div>
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
+					</div>
+				{/if}
 
 			<!-- Tab 3: Scheduled Jobs -->
 			{:else if activeTab === 3}
+				{#if $canDoAction('action.scheduled_jobs')}
 				<div class="flex items-center justify-between mb-4">
 					<h3 class="text-sm font-semibold text-primary">{$t('jobs.title')}</h3>
 					<Button variant="primary" size="sm" onclick={() => { newJobEnv = ''; newJobType = 'update_check'; newJobInterval = 24; newJobStack = ''; showAddJob = true; }}>{$t('jobs.addJob')}</Button>
@@ -500,6 +532,13 @@
 								{/each}
 							</tbody>
 						</table>
+					</div>
+				{/if}
+				{:else}
+					<div class="flex flex-col items-center justify-center py-16 text-center">
+						<svg class="w-10 h-10 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<p class="text-sm font-medium text-secondary">Keine Berechtigung</p>
+						<p class="text-xs text-muted mt-1">Du hast keine Berechtigung für diesen Bereich.</p>
 					</div>
 				{/if}
 			{/if}

@@ -518,6 +518,12 @@ fn extract_claims(headers: &axum::http::HeaderMap) -> Option<Claims> {
     auth::validate_token(token).ok()
 }
 
+fn has_permission(state: &AppState, claims: &Claims, perm: &str) -> bool {
+    if claims.role == "super_admin" { return true; }
+    let perms = state.db.get_user_permissions(&claims.sub);
+    perms.iter().any(|p| p == perm)
+}
+
 fn audit_user(headers: &axum::http::HeaderMap) -> String {
     headers.get("Authorization")
         .and_then(|v| v.to_str().ok())
@@ -629,36 +635,14 @@ pub async fn get_user_permissions_handler(
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
     let role = state.db.get_user_role(&claims.username).unwrap_or_else(|| "viewer".to_string());
-    // super_admin and admin get all permissions
-    if role == "super_admin" || role == "admin" {
+    // super_admin always gets all permissions
+    if role == "super_admin" {
         return Json(ApiResponse::ok(serde_json::json!({
             "role": role,
             "permissions": ["*"],
         })));
     }
-    // editor gets container actions
-    if role == "editor" {
-        return Json(ApiResponse::ok(serde_json::json!({
-            "role": role,
-            "permissions": [
-                "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
-                "page.networks", "page.monitoring", "page.health",
-                "action.container_start_stop", "action.container_restart",
-                "action.stack_deploy_stop",
-            ],
-        })));
-    }
-    // viewer gets read-only
-    if role == "viewer" {
-        return Json(ApiResponse::ok(serde_json::json!({
-            "role": role,
-            "permissions": [
-                "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
-                "page.networks", "page.monitoring", "page.health",
-            ],
-        })));
-    }
-    // "user" role: permissions come from groups only
+    // All other roles: permissions come from group memberships
     let permissions = state.db.get_user_permissions(&claims.sub);
     Json(ApiResponse::ok(serde_json::json!({
         "role": role,
@@ -676,8 +660,7 @@ pub async fn list_users(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -708,8 +691,7 @@ pub async fn create_user(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -730,6 +712,20 @@ pub async fn create_user(
     let user_id = uuid::Uuid::new_v4().to_string();
     match state.db.create_user_with_role(&user_id, &req.username, &password_hash, &req.role) {
         Ok(_) => {
+            // Auto-assign to matching default group based on role
+            let group_name = match req.role.as_str() {
+                "super_admin" | "admin" => "Admin",
+                "editor" => "Editor",
+                "viewer" => "Viewer",
+                "user" => "DockPit",
+                _ => "",
+            };
+            if !group_name.is_empty() {
+                let groups = state.db.list_groups();
+                if let Some((gid, _, _, _, _, _)) = groups.iter().find(|(_, name, _, _, _, _)| name == group_name) {
+                    state.db.set_user_groups(&user_id, &[*gid]);
+                }
+            }
             state.db.log_audit(&audit_user(&headers), "user_create", Some(&req.username), Some(&req.role));
             Json(ApiResponse::ok("Benutzer erstellt".to_string()))
         }
@@ -747,8 +743,7 @@ pub async fn update_user(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -796,8 +791,7 @@ pub async fn delete_user(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -841,8 +835,7 @@ pub async fn get_settings(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -861,8 +854,7 @@ pub async fn save_settings(
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
     };
-    let role = state.db.get_user_role(&claims.username).unwrap_or_default();
-    if !auth::check_role(&role, &["super_admin"]) {
+    if !has_permission(&state, &claims, "action.user_management") {
         return Json(ApiResponse::err("Keine Berechtigung"));
     }
 
@@ -2755,6 +2747,9 @@ pub async fn env_check_status(
     if env.is_local {
         return Json(ApiResponse::ok("online".to_string()));
     }
+    if env.paused {
+        return Json(ApiResponse::ok("paused".to_string()));
+    }
     let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().unwrap();
     let url = format!("{}/health", env.url);
     let status = match client.get(&url).send().await {
@@ -2844,6 +2839,7 @@ pub async fn create_environment(
         status: "online".to_string(),
         is_local: false,
         agent_token: Some(token),
+        paused: false,
     };
 
     match state.db.create_environment(&env) {
@@ -2939,6 +2935,21 @@ pub async fn discover_agents(
     }
 
     Json(ApiResponse::ok(results))
+}
+
+pub async fn toggle_env_paused(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let paused = req.get("paused").and_then(|v| v.as_bool()).unwrap_or(false);
+    match state.db.toggle_env_paused(&id, paused) {
+        Ok(_) => {
+            invalidate_env_cache(&state);
+            Json(ApiResponse::ok(if paused { "paused" } else { "resumed" }.to_string()))
+        }
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
 }
 
 pub async fn update_environment(
@@ -3539,6 +3550,7 @@ pub async fn env_refresh_events(
 pub async fn collect_events_since(state: Arc<AppState>, since_secs: i64) {
     let envs = state.db.get_environments();
     for env in &envs {
+        if env.paused { continue; } // Skip paused environments
         let events = if env.is_local {
             let mut evts = state.docker.get_recent_events(since_secs).await;
             for e in &mut evts { e.env_id = env.id.clone(); }

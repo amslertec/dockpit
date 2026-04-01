@@ -384,6 +384,14 @@ export const de: Record<string, string> = {
 	'groups.actionPermissions': 'Aktionen',
 	'groups.assignGroups': 'Gruppen zuweisen',
 	'groups.color': 'Farbe',
+	'groups.descDockPit': 'Standardgruppe für neue Benutzer (nur Dashboard)',
+	'groups.descAdmin': 'Volle Docker-Verwaltung, Einstellungen, Backups',
+	'groups.descEditor': 'Kann Container starten/stoppen und Stacks deployen',
+	'groups.descViewer': 'Nur-Lese-Zugriff auf Dashboards und Monitoring',
+	'env.paused': 'Pausiert',
+	'env.pause': 'Pausieren',
+	'env.resume': 'Fortsetzen',
+	'env.pauseDesc': 'Verbindung pausiert — keine Status-Prüfungen',
 	'groups.deleteConfirm': 'Gruppe wirklich löschen?',
 
 	// === Profile ===
@@ -776,6 +784,9 @@ export const de: Record<string, string> = {
 	'audit.backupCreate': 'Backup erstellt',
 	'audit.templateCreate': 'Vorlage erstellt',
 	'audit.loginBlocked': 'Anmeldung blockiert',
+	'audit.groupCreate': 'Gruppe erstellt',
+	'audit.groupDelete': 'Gruppe gelöscht',
+	'audit.stackMigrate': 'Stack migriert',
 
 	// === Favoriten ===
 	// === Vorlagen ===

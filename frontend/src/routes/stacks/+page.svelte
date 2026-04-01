@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { selectedEnv, environments } from '$lib/stores/environment';
 	import { toasts } from '$lib/stores/toast';
@@ -12,7 +13,7 @@
 	import TextInput from '$lib/components/ui/TextInput.svelte';
 	import YAML from 'yaml';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
-	import { canManageDocker, canEditContainers } from '$lib/stores/auth';
+	import { canManageDocker, canEditContainers, canDoAction, canSeePage } from '$lib/stores/auth';
 	import type { StackInfo, StackFile, StackTemplate } from '$lib/api/types';
 
 	let stacks = $state<StackInfo[]>([]);
@@ -103,6 +104,10 @@
 	// Stats
 	const runningCount = $derived(stacks.filter(s => s.status === 'running').length);
 	const stoppedCount = $derived(stacks.filter(s => s.status === 'stopped').length);
+
+	$effect(() => {
+		if (!$canSeePage('page.stacks')) goto('/profile');
+	});
 
 	onMount(() => { resetCreate(); load(); loadTemplates(); });
 	$effect(() => { $selectedEnv; load(); });
@@ -269,14 +274,16 @@
 		<div class="flex items-center gap-2">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
-			<Button variant="purple" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
-				<span class="hidden md:inline">{$t('templates.fromTemplate')}</span>
-			</Button>
-			<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }} title={$t('stacks.newStack')}>
-				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-				<span class="hidden md:inline">{$t('stacks.newStack')}</span>
-			</Button>
+			{#if $canDoAction('action.stack_create_delete')}
+				<Button variant="purple" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
+					<span class="hidden md:inline">{$t('templates.fromTemplate')}</span>
+				</Button>
+				<Button variant="primary" size="sm" onclick={() => { resetCreate(); showCreate = true; }} title={$t('stacks.newStack')}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+					<span class="hidden md:inline">{$t('stacks.newStack')}</span>
+				</Button>
+			{/if}
 			<Button variant="success" size="sm" onclick={load} title={$t('common.refresh')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
 			</Button>
@@ -311,21 +318,27 @@
 							<td class="px-4 py-3 text-[11px] font-mono text-muted max-w-[200px] truncate hidden md:table-cell">{s.path}</td>
 							<td class="px-4 py-3">
 								<div class="flex gap-1">
-									{#if s.status !== 'running'}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition" onclick={() => deploy(s.name)} title={$t('stacks.deploy')}>
-											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-									{:else}
-										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => stop(s.name)} title={$t('containers.stop')}>
-											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+									{#if $canDoAction('action.stack_deploy_stop')}
+										{#if s.status !== 'running'}
+											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--green)] hover:border-[var(--green)]/40 hover:bg-[var(--green)]/8 transition" onclick={() => deploy(s.name)} title={$t('stacks.deploy')}>
+												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+										{:else}
+											<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => stop(s.name)} title={$t('containers.stop')}>
+												<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+										{/if}
 									{/if}
-									<a href="/stacks/{s.name}" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition no-underline" title={$t('common.edit')}>
-										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
-									{#if $canManageDocker}
-									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => migrateStack = s.name} title={$t('stacks.migrate')}>
-										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+									{#if $canDoAction('action.stack_edit')}
+										<a href="/stacks/{s.name}" class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--purple)] hover:border-[var(--purple)]/40 hover:bg-[var(--purple)]/8 transition no-underline" title={$t('common.edit')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></a>
 									{/if}
-									<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => remove(s.name)} title={$t('common.delete')}>
-										<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+									{#if $canDoAction('action.stack_migrate')}
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--accent)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/8 transition" onclick={() => migrateStack = s.name} title={$t('stacks.migrate')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+									{/if}
+									{#if $canDoAction('action.stack_create_delete')}
+										<button class="w-7 h-7 flex items-center justify-center rounded-[var(--radius-sm)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 transition" onclick={() => remove(s.name)} title={$t('common.delete')}>
+											<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+									{/if}
 								</div>
 							</td>
 						</tr>

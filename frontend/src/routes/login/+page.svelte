@@ -26,6 +26,11 @@
 		});
 		if (r.success && r.data) {
 			auth.login(r.data.token, r.data.username);
+			// Load permissions for user role
+			const permR = await api.get<{role: string; permissions: string[]}>('/my-permissions');
+			if (permR.success && permR.data) {
+				auth.setPermissions(permR.data.permissions);
+			}
 			const envR = await api.get<EnvironmentInfo[]>('/environments');
 			if (envR.success && envR.data) {
 				environments.set(envR.data);

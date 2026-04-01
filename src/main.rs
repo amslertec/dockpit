@@ -253,6 +253,7 @@ async fn main() {
         .route("/api/environments", post(handlers::create_environment))
         .route("/api/environments/{id}", put(handlers::update_environment))
         .route("/api/environments/{id}", delete(handlers::delete_environment))
+        .route("/api/environments/{id}/pause", put(handlers::toggle_env_paused))
         .route("/api/agents/discover", post(handlers::discover_agents))
         .route("/api/registries", get(handlers::list_registries))
         .route("/api/registries", post(handlers::add_registry))
@@ -308,7 +309,7 @@ async fn main() {
         .route("/api/scheduled-jobs/{id}/run", post(handlers::run_scheduled_job))
         .layer(middleware::from_fn(auth::admin_middleware));
 
-    // === SUPER_ADMIN only routes (user management) ===
+    // === User management routes (permission checked in handlers) ===
     let super_admin_routes = Router::new()
         .route("/api/users", get(handlers::list_users))
         .route("/api/users", post(handlers::create_user))
@@ -320,7 +321,7 @@ async fn main() {
         .route("/api/groups/{id}", put(handlers::update_group))
         .route("/api/groups/{id}", delete(handlers::delete_group))
         .route("/api/users/{id}/groups", put(handlers::set_user_groups_handler))
-        .layer(middleware::from_fn(auth::super_admin_middleware));
+        .layer(middleware::from_fn(auth::auth_middleware));
 
     // WebSocket routes (auth via query param)
     let ws_routes = Router::new()

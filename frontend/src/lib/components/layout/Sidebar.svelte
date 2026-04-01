@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { selectedEnv, environments } from '$lib/stores/environment';
-	import { auth, canManageUsers, canManageDocker } from '$lib/stores/auth';
+	import { auth, canManageUsers, canManageDocker, canSeePage, canDoAction } from '$lib/stores/auth';
 	import { t } from '$lib/i18n';
 
 	interface Props { open: boolean; onclose: () => void; }
@@ -10,14 +10,14 @@
 	const envName = $derived($environments.find(e => e.id === $selectedEnv)?.name || '');
 
 	const navItems = [
-		{ href: '/dashboard', key: 'nav.dashboard', icon: 'dash' },
-		{ href: '/monitoring', key: 'monitoring.title', icon: 'monitor' },
-		{ href: '/health', key: 'health.title', icon: 'heart' },
-		{ href: '/stacks', key: 'nav.stacks', icon: 'stack' },
-		{ href: '/containers', key: 'nav.containers', icon: 'box' },
-		{ href: '/images', key: 'nav.images', icon: 'img' },
-		{ href: '/volumes', key: 'nav.volumes', icon: 'vol' },
-		{ href: '/networks', key: 'nav.networks', icon: 'net' },
+		{ href: '/dashboard', key: 'nav.dashboard', icon: 'dash', perm: 'page.dashboard' },
+		{ href: '/monitoring', key: 'monitoring.title', icon: 'monitor', perm: 'page.monitoring' },
+		{ href: '/health', key: 'health.title', icon: 'heart', perm: 'page.health' },
+		{ href: '/stacks', key: 'nav.stacks', icon: 'stack', perm: 'page.stacks' },
+		{ href: '/containers', key: 'nav.containers', icon: 'box', perm: 'page.containers' },
+		{ href: '/images', key: 'nav.images', icon: 'img', perm: 'page.images' },
+		{ href: '/volumes', key: 'nav.volumes', icon: 'vol', perm: 'page.volumes' },
+		{ href: '/networks', key: 'nav.networks', icon: 'net', perm: 'page.networks' },
 	];
 
 	function isActive(href: string): boolean {
@@ -53,7 +53,7 @@
 		{#if $selectedEnv}
 			<div>
 				<div class="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)] px-3 mb-2">{envName}</div>
-				{#each navItems as item}
+				{#each navItems.filter(item => $canSeePage(item.perm)) as item}
 					<a href={item.href} class="nav-item {isActive(item.href) ? 'nav-active' : ''}" onclick={onclose}>
 						{#if item.icon === 'stack'}
 							<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
@@ -78,43 +78,57 @@
 			</div>
 		{/if}
 
-		{#if $canManageDocker}
+		{#if $canManageDocker || $canSeePage('page.updates') || $canSeePage('page.events') || $canSeePage('page.vulnerabilities') || $canSeePage('page.audit') || $canSeePage('page.host_terminal') || $canSeePage('page.environments') || $canSeePage('page.settings')}
 			<div>
 				<div class="text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)] px-3 mb-2">{$t('nav.management')}</div>
+				{#if $canManageDocker || $canSeePage('page.updates')}
 				<a href="/updates" class="nav-item {isActive('/updates') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 					{$t('nav.updates')}
 				</a>
+				{/if}
+				{#if $canManageDocker || $canSeePage('page.events')}
 				<a href="/events" class="nav-item {isActive('/events') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
 					{$t('events.title')}
 				</a>
+				{/if}
+				{#if $canManageDocker || $canSeePage('page.vulnerabilities')}
 				<a href="/vulnerabilities" class="nav-item {isActive('/vulnerabilities') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 					{$t('vuln.title')}
 				</a>
+				{/if}
+				{#if $canManageDocker || $canSeePage('page.audit')}
 				<a href="/audit" class="nav-item {isActive('/audit') ? 'nav-active' : ''}" onclick={onclose}>
 				<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg>
 				{$t('audit.title')}
 			</a>
+				{/if}
+				{#if $canManageDocker || $canSeePage('page.host_terminal')}
 			<a href="/host-terminal" class="nav-item {isActive('/host-terminal') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
 					{$t('nav.hostTerminal')}
 				</a>
+				{/if}
+				{#if $canManageDocker || $canSeePage('page.environments')}
 				<a href="/environments" class="nav-item {isActive('/environments') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
 					{$t('nav.environments')}
 				</a>
+				{/if}
 				{#if $canManageUsers}
 					<a href="/users" class="nav-item {isActive('/users') ? 'nav-active' : ''}" onclick={onclose}>
 						<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
 						{$t('nav.userManagement')}
 					</a>
 				{/if}
+				{#if $canManageDocker || $canSeePage('page.settings')}
 				<a href="/settings" class="nav-item {isActive('/settings') ? 'nav-active' : ''}" onclick={onclose}>
 					<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
 					{$t('nav.settings')}
 				</a>
+				{/if}
 			</div>
 		{/if}
 

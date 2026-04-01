@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
+	import { canDoAction } from '$lib/stores/auth';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
 	import { browser } from '$app/environment';
@@ -10,6 +12,10 @@
 
 	const containerId = $derived($page.params.id);
 	const fromStack = $derived($page.url.searchParams.get('stack'));
+
+	$effect(() => {
+		if (!$canDoAction('action.container_terminal')) goto('/profile');
+	});
 	const backHref = $derived(fromStack ? `/stacks/${fromStack}` : '/containers');
 
 	let containerName = $state('');

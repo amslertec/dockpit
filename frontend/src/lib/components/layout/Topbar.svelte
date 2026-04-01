@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { theme } from '$lib/stores/theme';
 	import { selectedEnv, environments } from '$lib/stores/environment';
+	import { canDoAction } from '$lib/stores/auth';
 	import { t, locale } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import NotificationPanel from '$lib/components/ui/NotificationPanel.svelte';
@@ -59,38 +60,45 @@
 
 	<div class="flex items-center gap-3">
 		{#if $environments.length > 0}
-			<div class="relative">
-				<button
-					class="flex items-center gap-2 bg-[var(--bg-3)] border border-[var(--border)] rounded-[var(--radius-md)] px-2 py-2 md:px-3.5 text-xs text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all duration-200 max-w-[220px]"
-					onclick={(e: MouseEvent) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
-				>
-					<span class="w-2 h-2 rounded-full shrink-0 {currentEnv?.status === 'online' || currentEnv?.is_local ? 'bg-[var(--green)] shadow-[var(--shadow-glow-green)]' : 'bg-[var(--red)]'}"></span>
-					<span class="truncate font-medium hidden md:inline">{currentEnvName}</span>
-					<svg class="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0 transition-transform duration-200 hidden md:block {dropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-				</button>
+			{#if $canDoAction('action.server_switch') && $environments.length > 1}
+				<div class="relative">
+					<button
+						class="flex items-center gap-2 bg-[var(--bg-3)] border border-[var(--border)] rounded-[var(--radius-md)] px-2 py-2 md:px-3.5 text-xs text-[var(--text)] hover:border-[var(--border-light)] hover:shadow-[var(--shadow-sm)] transition-all duration-200 max-w-[220px]"
+						onclick={(e: MouseEvent) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
+					>
+						<span class="w-2 h-2 rounded-full shrink-0 {currentEnv?.status === 'online' || currentEnv?.is_local ? 'bg-[var(--green)] shadow-[var(--shadow-glow-green)]' : 'bg-[var(--red)]'}"></span>
+						<span class="truncate font-medium hidden md:inline">{currentEnvName}</span>
+						<svg class="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0 transition-transform duration-200 hidden md:block {dropdownOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
 
-				{#if dropdownOpen}
-					<div class="fixed right-4 mt-2 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[9999] min-w-[220px] py-1.5 overflow-hidden env-dropdown-enter" style="top: 56px;">
-						<div class="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">{$t('topbar.selectEnv')}</div>
-						{#each $environments as env}
-							<button
-								class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
-								{env.id === $selectedEnv ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
-								onclick={() => selectEnv(env.id)}
-							>
-								<span class="w-2 h-2 rounded-full shrink-0 {env.status === 'online' || env.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
-								<span class="truncate font-medium">{env.name}</span>
-								{#if env.is_local}
-									<span class="text-[9px] text-[var(--text-muted)] ml-auto px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">{$t('topbar.local')}</span>
-								{/if}
-								{#if env.id === $selectedEnv}
-									<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
+					{#if dropdownOpen}
+						<div class="fixed right-4 mt-2 bg-[var(--dropdown-bg)] border border-[var(--border-light)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[9999] min-w-[220px] py-1.5 overflow-hidden env-dropdown-enter" style="top: 56px;">
+							<div class="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--text-muted)]">{$t('topbar.selectEnv')}</div>
+							{#each $environments as env}
+								<button
+									class="w-full flex items-center gap-3 px-3 py-2.5 text-xs text-left transition-all duration-150
+									{env.id === $selectedEnv ? 'bg-[var(--accent-bg)] text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'}"
+									onclick={() => selectEnv(env.id)}
+								>
+									<span class="w-2 h-2 rounded-full shrink-0 {env.status === 'online' || env.is_local ? 'bg-[var(--green)]' : 'bg-[var(--red)]'}"></span>
+									<span class="truncate font-medium">{env.name}</span>
+									{#if env.is_local}
+										<span class="text-[9px] text-[var(--text-muted)] ml-auto px-1.5 py-0.5 rounded-full bg-[var(--bg-3)]">{$t('topbar.local')}</span>
+									{/if}
+									{#if env.id === $selectedEnv}
+										<svg class="w-3.5 h-3.5 shrink-0 ml-auto text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<div class="flex items-center gap-2 px-2 py-2 text-xs text-muted">
+					<span class="w-2 h-2 rounded-full shrink-0 bg-[var(--green)]"></span>
+					<span class="truncate font-medium hidden md:inline">{$t('topbar.local')}</span>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Search (Ctrl+K) -->

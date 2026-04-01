@@ -10,7 +10,8 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import TextInput from '$lib/components/ui/TextInput.svelte';
-	import { canManageDocker } from '$lib/stores/auth';
+	import { canManageDocker, canDoAction, canSeePage } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import type { ImageInfo } from '$lib/api/types';
 
@@ -158,6 +159,10 @@
 	const unusedCount = $derived(images.filter(i => !i.in_use).length);
 	const totalSize = $derived(images.reduce((a, i) => a + i.size, 0));
 
+	$effect(() => {
+		if (!$canSeePage('page.images')) goto('/profile');
+	});
+
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
 	$effect(() => { search; filter; page = 1; });
@@ -245,7 +250,7 @@
 		<div class="flex items-center gap-2 flex-wrap">
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
-			{#if $canManageDocker}
+			{#if $canDoAction('action.image_pull_delete')}
 			<Button variant="danger" size="sm" loading={pruning} onclick={prune}>
 				{#if !pruning}
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
@@ -264,7 +269,7 @@
 	</div>
 
 	<!-- Bulk actions -->
-	{#if someSelected}
+	{#if someSelected && $canDoAction('action.image_pull_delete')}
 		<div class="px-4 py-2 border-b border-theme bg-1 flex items-center gap-2 flex-wrap">
 			<span class="text-xs text-secondary">{$t('common.selected', { count: selected.size })}</span>
 			<Button variant="danger" size="sm" loading={bulkRunning} onclick={bulkForceDelete}>
@@ -280,7 +285,7 @@
 		<div class="overflow-x-auto">
 			<table class="w-full">
 				<thead><tr class="border-b border-theme">
-					<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>
+					{#if $canDoAction('action.image_pull_delete')}<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('tags')}>{$t('images.repoTag')}{sortIndicator('tags')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('id')}>ID{sortIndicator('id')}</th>
@@ -291,11 +296,11 @@
 				<tbody>
 					{#each paged as img}
 						<tr class="border-b border-theme last:border-0 hover:bg-hover transition {!img.in_use ? 'opacity-70' : ''} {selected.has(img.id) ? 'bg-accent-light' : ''}">
-							<td class="w-10 px-4 py-3">
+							{#if $canDoAction('action.image_pull_delete')}<td class="w-10 px-4 py-3">
 								{#if !img.in_use}
 									<CustomCheckbox checked={selected.has(img.id)} onchange={() => toggleSelect(img.id)} size="sm" />
 								{/if}
-							</td>
+							</td>{/if}
 							<td class="px-4 py-3">
 								{#if img.in_use}
 									<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-light text-green">
@@ -311,6 +316,7 @@
 							<td class="px-4 py-3 text-[11px] font-mono text-secondary">{truncateId(img.id)}</td>
 							<td class="px-4 py-3 text-xs text-secondary">{formatSize(img.size)}</td>
 							<td class="px-4 py-3 text-xs text-secondary hidden md:table-cell">{formatDate(img.created)}</td>
+							{#if $canDoAction('action.image_pull_delete')}
 							<td class="px-4 py-3">
 								<div class="flex gap-1">
 									{#if img.in_use}
@@ -327,6 +333,8 @@
 									{/if}
 								</div>
 							</td>
+							{:else}<td></td>
+							{/if}
 						</tr>
 					{:else}
 						<tr><td colspan="7" class="text-center py-10 text-sm text-muted">{$t('images.noImages')}</td></tr>
