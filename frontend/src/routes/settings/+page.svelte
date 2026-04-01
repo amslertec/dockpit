@@ -32,7 +32,6 @@
 	let smtpUser = $state('');
 	let smtpPass = $state('');
 	let smtpFrom = $state('');
-	let smtpTo = $state('');
 	let smtpTls = $state(true);
 
 	// Update Monitor
@@ -101,7 +100,6 @@
 			smtpUser = settings['smtp_user'] || '';
 			smtpPass = settings['smtp_pass'] || '';
 			smtpFrom = settings['smtp_from'] || '';
-			smtpTo = settings['smtp_to'] || '';
 			smtpTls = settings['smtp_tls'] !== 'false';
 			updateInterval = settings['update_interval'] || '24';
 			updateEnabled = settings['update_enabled'] === 'true';
@@ -122,7 +120,7 @@
 		const s: Record<string, string> = {
 			webhook_url: webhookUrl, webhook_enabled: String(webhookEnabled),
 			smtp_host: smtpHost, smtp_port: smtpPort, smtp_user: smtpUser, smtp_pass: smtpPass,
-			smtp_from: smtpFrom, smtp_to: smtpTo, smtp_tls: String(smtpTls),
+			smtp_from: smtpFrom, smtp_tls: String(smtpTls),
 			update_interval: updateInterval, update_enabled: String(updateEnabled),
 			timezone,
 			backup_dir: backupDir, backup_enabled: String(backupEnabled),
@@ -132,6 +130,15 @@
 		saving = false;
 		localStorage.setItem('dp_timezone', timezone);
 		if (r.success) toasts.success($t('settings.saved'));
+		else toasts.error(r.error || $t('common.error'));
+	}
+
+	let testingEmail = $state(false);
+	async function testEmail() {
+		testingEmail = true;
+		const r = await api.post<string>('/settings/email/test', {});
+		testingEmail = false;
+		if (r.success) toasts.success(r.data || 'Test-Email gesendet');
 		else toasts.error(r.error || $t('common.error'));
 	}
 
@@ -357,13 +364,19 @@
 					<TextInput bind:value={smtpUser} label={$t('login.username')} placeholder="user@example.com" />
 					<TextInput bind:value={smtpPass} label={$t('login.password')} placeholder="" type="password" />
 					<TextInput bind:value={smtpFrom} label={$t('settings.sender')} placeholder="dockpit@example.com" />
-					<div>
-						<TextInput bind:value={smtpTo} label={$t('settings.recipient')} placeholder="admin@example.com" />
-						<p class="text-[10px] text-muted mt-1">{$t('settings.recipientHint')}</p>
-					</div>
 					<CustomCheckbox checked={smtpTls} onchange={(v) => smtpTls = v} label={$t('settings.useTLS')} size="sm" />
 
-					<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
+					<div class="flex gap-2">
+						<Button variant="primary" size="md" onclick={save} loading={saving}>{$t('common.save')}</Button>
+						<Button variant="success" size="md" onclick={testEmail} loading={testingEmail}>{$t('settings.testEmail')}</Button>
+					</div>
+
+					<div class="mt-4 p-3 bg-[var(--bg-0)] border border-theme rounded-lg">
+						<p class="text-[11px] text-muted">
+							<svg class="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+							{$t('settings.emailInfoRecipients')}
+						</p>
+					</div>
 				</div>
 
 				{:else}

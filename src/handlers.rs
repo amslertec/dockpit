@@ -366,10 +366,15 @@ pub async fn get_profile(
 
     let totp_enabled = state.db.get_totp_secret(&claims.username).is_some();
 
+    let email = state.db.get_user_email(&claims.username);
+    let email_notifications = state.db.get_user_email_notifications(&claims.username);
+
     Json(ApiResponse::ok(UserProfile {
         username: claims.username,
         role,
         totp_enabled,
+        email,
+        email_notifications,
     }))
 }
 
@@ -524,6 +529,147 @@ fn has_permission(state: &AppState, claims: &Claims, perm: &str) -> bool {
     perms.iter().any(|p| p == perm)
 }
 
+#[allow(dead_code)]
+fn send_email_sync(state: &AppState, subject: &str, body: &str) {
+    use lettre::message::header::ContentType;
+    use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{Message, SmtpTransport, Transport};
+
+    let host = match state.db.get_setting("smtp_host") {
+        Some(h) if !h.is_empty() => h,
+        _ => return,
+    };
+    let port: u16 = state.db.get_setting("smtp_port").and_then(|p| p.parse().ok()).unwrap_or(587);
+    let user = state.db.get_setting("smtp_user").unwrap_or_default();
+    let pass = state.db.get_setting("smtp_pass").unwrap_or_default();
+    let from_addr = match state.db.get_setting("smtp_from") {
+        Some(f) if !f.is_empty() => f,
+        _ => return,
+    };
+    let use_tls = state.db.get_setting("smtp_tls").map(|v| v == "true").unwrap_or(true);
+
+    let recipients = state.db.get_users_for_email_notification("");
+    if recipients.is_empty() { return; }
+
+    let creds = Credentials::new(user, pass);
+    let mailer = if use_tls {
+        match SmtpTransport::starttls_relay(&host) {
+            Ok(b) => b.port(port).credentials(creds).build(),
+            Err(_) => return,
+        }
+    } else {
+        SmtpTransport::builder_dangerous(&host).port(port).credentials(creds).build()
+    };
+
+    for (_username, email) in &recipients {
+        let to_addr = match email.parse() { Ok(a) => a, Err(_) => continue };
+        let from = match from_addr.parse() { Ok(a) => a, Err(_) => continue };
+        let msg = match Message::builder()
+            .from(from)
+            .to(to_addr)
+            .subject(subject)
+            .header(ContentType::TEXT_PLAIN)
+            .body(format!("{}\n\n-- DockPit", body)) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+        if let Err(e) = mailer.send(&msg) {
+            tracing::warn!("Email to {} failed: {}", email, e);
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn notify_and_email(state: &AppState, ntype: &str, title: &str, message: &str) {
+    state.db.create_notification(ntype, title, message).ok();
+    let subject = format!("DockPit: {}", title);
+    send_email_sync(state, &subject, message);
+}
+
+pub async fn test_email(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<ApiResponse<String>> {
+    use lettre::message::header::ContentType;
+    use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{Message, SmtpTransport, Transport};
+
+    let host = match state.db.get_setting("smtp_host") {
+        Some(h) if !h.is_empty() => h,
+        _ => return Json(ApiResponse::err("SMTP Host nicht konfiguriert")),
+    };
+    let port: u16 = state.db.get_setting("smtp_port").and_then(|p| p.parse().ok()).unwrap_or(587);
+    let user = state.db.get_setting("smtp_user").unwrap_or_default();
+    let pass = state.db.get_setting("smtp_pass").unwrap_or_default();
+    let from_addr = match state.db.get_setting("smtp_from") {
+        Some(f) if !f.is_empty() => f,
+        _ => return Json(ApiResponse::err("Absender nicht konfiguriert")),
+    };
+    let use_tls = state.db.get_setting("smtp_tls").map(|v| v == "true").unwrap_or(true);
+
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    let to_email = match state.db.get_user_email(&claims.username) {
+        Some(e) if !e.is_empty() => e,
+        _ => return Json(ApiResponse::err("Keine Email für deinen Account hinterlegt")),
+    };
+
+    let creds = Credentials::new(user, pass);
+    let mailer = if use_tls {
+        match SmtpTransport::starttls_relay(&host) {
+            Ok(b) => b.port(port).credentials(creds).build(),
+            Err(e) => return Json(ApiResponse::err(format!("SMTP: {}", e))),
+        }
+    } else {
+        SmtpTransport::builder_dangerous(&host).port(port).credentials(creds).build()
+    };
+
+    let from = match from_addr.parse() {
+        Ok(a) => a,
+        Err(_) => return Json(ApiResponse::err("Ungültige Absender-Adresse")),
+    };
+    let to = match to_email.parse() {
+        Ok(a) => a,
+        Err(_) => return Json(ApiResponse::err("Ungültige Empfänger-Adresse")),
+    };
+
+    let msg = match Message::builder()
+        .from(from)
+        .to(to)
+        .subject("DockPit Test-Email")
+        .header(ContentType::TEXT_PLAIN)
+        .body("Dies ist eine Test-Email von DockPit.\n\nWenn du diese Email erhältst, funktioniert die Email-Konfiguration korrekt.\n\n-- DockPit".to_string()) {
+            Ok(m) => m,
+            Err(e) => return Json(ApiResponse::err(format!("Build: {}", e))),
+        };
+
+    match mailer.send(&msg) {
+        Ok(_) => Json(ApiResponse::ok(format!("Test-Email an {} gesendet", to_email))),
+        Err(e) => Json(ApiResponse::err(format!("Versand: {}", e))),
+    }
+}
+
+pub async fn update_profile_email(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    let email = req.get("email").and_then(|v| v.as_str()).unwrap_or("");
+    state.db.update_user_email(&claims.username, if email.is_empty() { None } else { Some(email) }).ok();
+
+    if let Some(notif) = req.get("email_notifications").and_then(|v| v.as_bool()) {
+        state.db.set_email_notifications(&claims.username, notif).ok();
+    }
+
+    Json(ApiResponse::ok("Email aktualisiert".to_string()))
+}
+
 fn audit_user(headers: &axum::http::HeaderMap) -> String {
     headers.get("Authorization")
         .and_then(|v| v.to_str().ok())
@@ -666,7 +812,7 @@ pub async fn list_users(
 
     let users = state.db.list_users()
         .into_iter()
-        .map(|(id, username, role, created_at, totp_enabled)| {
+        .map(|(id, username, role, created_at, totp_enabled, email, email_notifications)| {
             let user_groups = state.db.get_user_groups(&id);
             serde_json::json!({
                 "id": id,
@@ -674,6 +820,8 @@ pub async fn list_users(
                 "role": role,
                 "totp_enabled": totp_enabled,
                 "created_at": created_at,
+                "email": email,
+                "email_notifications": email_notifications,
                 "groups": user_groups.iter().map(|(gid, gname, gcolor)| serde_json::json!({"id": gid, "name": gname, "color": gcolor})).collect::<Vec<_>>(),
             })
         })
@@ -768,9 +916,9 @@ pub async fn update_user(
         // We need the username to update the password
         // Find user by id
         let users = state.db.list_users();
-        let user = users.iter().find(|(uid, _, _, _, _)| uid == &id);
+        let user = users.iter().find(|(uid, _, _, _, _, _, _)| uid == &id);
         match user {
-            Some((_, username, _, _, _)) => {
+            Some((_, username, _, _, _, _, _)) => {
                 if let Err(e) = state.db.update_password(username, &new_hash) {
                     return Json(ApiResponse::err(format!("Fehler: {}", e)));
                 }

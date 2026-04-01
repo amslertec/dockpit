@@ -231,6 +231,8 @@ pub struct UserProfile {
     pub username: String,
     pub role: String,
     pub totp_enabled: bool,
+    pub email: Option<String>,
+    pub email_notifications: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

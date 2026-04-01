@@ -18,6 +18,10 @@
 	let newPw2 = $state('');
 	let pwError = $state('');
 
+	// Email
+	let profileEmail = $state('');
+	let emailNotifications = $state(true);
+
 	// Notification preferences
 	let notifEnabled = $state(true);
 	let notifJobSuccess = $state(true);
@@ -38,7 +42,11 @@
 
 	onMount(async () => {
 		const r = await api.get<UserProfile>('/profile');
-		if (r.success) profile = r.data!;
+		if (r.success) {
+			profile = r.data!;
+			profileEmail = r.data?.email || '';
+			emailNotifications = r.data?.email_notifications !== false;
+		}
 
 		const s = await api.get<{ settings: Record<string, string> }>('/settings');
 		if (s.success && s.data?.settings) {
@@ -67,6 +75,11 @@
 		notifSaving = false;
 		if (r.success) toasts.success($t('notifications.saved'));
 		else toasts.error(r.error || $t('common.error'));
+	}
+
+	async function saveEmail() {
+		await api.put<string>('/profile/email', { email: profileEmail, email_notifications: emailNotifications });
+		toasts.success($t('settings.saved'));
 	}
 
 	async function changePw(e: Event) {
@@ -247,6 +260,20 @@
 					{/if}
 				<!-- Tab 3: Notifications -->
 			{:else if activeTab === 3}
+				<div class="mb-5 pb-5 border-b border-theme">
+					<h4 class="text-sm font-semibold text-primary mb-2">{$t('profile.emailAddress')}</h4>
+					<p class="text-xs text-secondary mb-3">{$t('profile.emailDesc')}</p>
+					<div class="flex items-end gap-3 max-w-md">
+						<div class="flex-1">
+							<TextInput bind:value={profileEmail} label="Email" placeholder="user@example.com" id="pemail" />
+						</div>
+						<Button variant="primary" size="md" onclick={saveEmail}>{$t('common.save')}</Button>
+					</div>
+					<div class="mt-3">
+						<CustomCheckbox checked={emailNotifications} onchange={(v) => { emailNotifications = v; saveEmail(); }} label={$t('profile.emailNotifications')} />
+					</div>
+				</div>
+
 				<h3 class="text-sm font-semibold text-primary mb-1">{$t('notifications.settings')}</h3>
 				<p class="text-xs text-secondary mb-5">{$t('notifications.settingsDesc')}</p>
 

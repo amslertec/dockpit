@@ -106,6 +106,8 @@ export interface UserProfile {
 	username: string;
 	role: string;
 	totp_enabled: boolean;
+	email?: string;
+	email_notifications?: boolean;
 }
 
 export interface TotpSetupResponse {

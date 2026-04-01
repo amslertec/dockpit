@@ -443,6 +443,9 @@ export const en: Record<string, string> = {
 	'profile.backupCodes': 'Backup Codes',
 	'profile.backupCodesDesc': 'Save these codes in a safe place. Each code can be used once instead of a 2FA code if you lose access to your authenticator app.',
 	'profile.backupCodesDone': 'I have saved the codes',
+	'profile.emailAddress': 'Email Address',
+	'profile.emailDesc': 'Optional — for receiving email notifications',
+	'profile.emailNotifications': 'Receive email notifications',
 
 	// === Settings ===
 	'settings.title': 'Settings',
@@ -510,6 +513,8 @@ export const en: Record<string, string> = {
 	'settings.recipient': 'Recipient',
 	'settings.recipientHint': 'Separate multiple recipients with comma',
 	'settings.useTLS': 'Use TLS/STARTTLS',
+	'settings.testEmail': 'Send Test Email',
+	'settings.emailInfoRecipients': 'Emails are sent to all users who have an email address in their profile and email notifications enabled.',
 	'settings.timezone': 'Timezone',
 	'settings.timezoneDesc': 'Set your timezone for all date and time displays',
 	'settings.prometheus': 'Prometheus Metrics',

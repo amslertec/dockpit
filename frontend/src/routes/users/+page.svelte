@@ -358,6 +358,7 @@
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('users.role')}</th>
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('groups.title')}</th>
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">2FA</th>
+							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">Email</th>
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('users.created')}</th>
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 						</tr></thead>
@@ -384,6 +385,7 @@
 											<span class="text-[10px] text-muted">—</span>
 										{/if}
 									</td>
+									<td class="px-4 py-2.5 text-[11px] text-muted hidden md:table-cell">{u.email || '—'}</td>
 									<td class="px-4 py-2.5 text-[11px] text-muted hidden md:table-cell">{formatDateTime(u.created_at)}</td>
 									<td class="px-4 py-2.5">
 										<div class="flex gap-1">
