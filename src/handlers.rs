@@ -1473,6 +1473,26 @@ pub async fn env_migrate_container(
     )))
 }
 
+// === Container Inspect ===
+
+pub async fn env_inspect_container(
+    State(state): State<Arc<AppState>>,
+    Path((env_id, container_id)): Path<(String, String)>,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let env = match get_env(&state, &env_id) {
+        Ok(e) => e,
+        Err(e) => return Json(ApiResponse { success: false, data: None, error: e.0.error }),
+    };
+    if env.is_local {
+        match state.docker.inspect_container_raw(&container_id).await {
+            Ok(data) => Json(ApiResponse::ok(data)),
+            Err(e) => Json(ApiResponse::err(e)),
+        }
+    } else {
+        agent_get(&env, &format!("/api/containers/{}/inspect", container_id)).await
+    }
+}
+
 // === Container Rollback ===
 
 pub async fn get_container_snapshots(

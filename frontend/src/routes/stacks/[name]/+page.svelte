@@ -316,7 +316,7 @@
 					{#each detail.containers as c}
 						<tr class="border-b border-theme last:border-0 hover:bg-hover transition">
 							<td class="px-4 py-2.5">
-								<div class="text-sm font-medium text-primary">{c.name}</div>
+								<a href="/containers/{c.id}" class="text-sm font-medium text-primary hover:text-[var(--accent)] transition no-underline">{c.name}</a>
 								<div class="text-[10px] font-mono text-muted">{c.id.substring(0, 12)}</div>
 							</td>
 							<td class="px-4 py-2.5 hidden md:table-cell">

@@ -141,6 +141,23 @@ export const de: Record<string, string> = {
 	'containers.changes': 'Änderungen',
 	'containers.noChanges': 'Keine Änderungen erkannt',
 
+	// === Container Detail ===
+	'containerDetail.status': 'Container-Status',
+	'containerDetail.created': 'Erstellt',
+	'containerDetail.started': 'Gestartet',
+	'containerDetail.restartPolicy': 'Restart-Richtlinie',
+	'containerDetail.health': 'Health Check',
+	'containerDetail.failCount': 'Fehlerzähler',
+	'containerDetail.lastOutput': 'Letzte Ausgabe',
+	'containerDetail.env': 'Umgebungsvariablen',
+	'containerDetail.volumes': 'Volumes & Mounts',
+	'containerDetail.networks': 'Verbundene Netzwerke',
+	'containerDetail.network': 'Netzwerk',
+	'containerDetail.type': 'Typ',
+	'containerDetail.source': 'Quelle',
+	'containerDetail.destination': 'Ziel',
+	'containerDetail.mode': 'Modus',
+
 	// === Alerts ===
 	'alerts.title': 'Alert-Regeln',
 	'alerts.name': 'Regelname',

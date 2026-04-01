@@ -232,6 +232,7 @@ async fn main() {
         .route("/api/refresh", post(handlers::refresh_token))
         .route("/api/dashboard-config", get(handlers::get_dashboard_config))
         .route("/api/dashboard-config", put(handlers::save_dashboard_config))
+        .route("/api/env/{env_id}/containers/{container_id}/inspect", get(handlers::env_inspect_container))
         .route("/api/snapshots/{container_name}", get(handlers::get_container_snapshots))
         .route("/api/snippets/{container_name}", get(handlers::get_snippets))
         .route("/api/snapshots/diff/{id1}/{id2}", get(handlers::get_snapshot_diff))
