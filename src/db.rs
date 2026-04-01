@@ -73,6 +73,9 @@ impl Database {
         // Migration: add hash column to audit_log
         conn.execute("ALTER TABLE audit_log ADD COLUMN hash TEXT", []).ok();
 
+        // Migration: add color column to groups
+        conn.execute("ALTER TABLE groups ADD COLUMN color TEXT DEFAULT '#6c5ce7'", []).ok();
+
         // Migration: add role column to users if not exists
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'", []).ok();
 
@@ -190,6 +193,31 @@ impl Database {
                 image TEXT NOT NULL,
                 config_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        ")?;
+
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS group_permissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                permission TEXT NOT NULL,
+                UNIQUE(group_id, permission),
+                FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS user_groups (
+                user_id TEXT NOT NULL,
+                group_id INTEGER NOT NULL,
+                PRIMARY KEY(user_id, group_id),
+                FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
             );
         ")?;
 
@@ -614,6 +642,109 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM shell_snippets WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    // === Groups & Permissions ===
+
+    pub fn seed_default_group(&self) {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM groups WHERE is_default = 1", [], |row| row.get(0)).unwrap_or(0);
+        if count == 0 {
+            conn.execute("INSERT INTO groups (name, description, is_default) VALUES ('DockPit', 'Standardgruppe mit vollen Rechten', 1)", []).ok();
+            // Add all permissions to default group
+            if let Ok(group_id) = conn.query_row("SELECT id FROM groups WHERE is_default = 1", [], |row| row.get::<_, i64>(0)) {
+                let all_perms = vec![
+                    "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+                    "page.networks", "page.monitoring", "page.health", "page.events", "page.updates",
+                    "page.vulnerabilities", "page.audit", "page.host_terminal", "page.environments", "page.settings",
+                    "action.container_start_stop", "action.container_restart", "action.container_recreate",
+                    "action.container_delete", "action.container_logs", "action.container_terminal",
+                    "action.stack_deploy_stop", "action.stack_create_delete", "action.stack_migrate",
+                    "action.image_pull_delete", "action.volume_delete", "action.network_delete",
+                    "action.backup", "action.user_management",
+                ];
+                for perm in all_perms {
+                    conn.execute("INSERT OR IGNORE INTO group_permissions (group_id, permission) VALUES (?1, ?2)", params![group_id, perm]).ok();
+                }
+            }
+        }
+    }
+
+    pub fn list_groups(&self) -> Vec<(i64, String, Option<String>, bool, String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, description, is_default, created_at, COALESCE(color, '#6c5ce7') FROM groups ORDER BY is_default DESC, name").unwrap();
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get::<_, i32>(3)? != 0, row.get(4)?, row.get(5)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn create_group(&self, name: &str, description: Option<&str>, color: Option<&str>) -> Result<i64, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO groups (name, description, color) VALUES (?1, ?2, ?3)", params![name, description, color.unwrap_or("#6c5ce7")])?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_group_info(&self, id: i64, name: &str, description: Option<&str>, color: Option<&str>) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE groups SET name = ?1, description = ?2, color = ?3 WHERE id = ?4",
+            params![name, description, color, id])?;
+        Ok(())
+    }
+
+    pub fn delete_group(&self, id: i64) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        // Don't delete default group
+        let is_default: i32 = conn.query_row("SELECT is_default FROM groups WHERE id = ?1", params![id], |row| row.get(0)).unwrap_or(1);
+        if is_default != 0 { return Err(rusqlite::Error::QueryReturnedNoRows); }
+        conn.execute("DELETE FROM group_permissions WHERE group_id = ?1", params![id])?;
+        conn.execute("DELETE FROM user_groups WHERE group_id = ?1", params![id])?;
+        conn.execute("DELETE FROM groups WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_group_permissions(&self, group_id: i64) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT permission FROM group_permissions WHERE group_id = ?1 ORDER BY permission").unwrap();
+        stmt.query_map(params![group_id], |row| row.get(0))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn set_group_permissions(&self, group_id: i64, permissions: &[String]) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM group_permissions WHERE group_id = ?1", params![group_id]).ok();
+        for perm in permissions {
+            conn.execute("INSERT INTO group_permissions (group_id, permission) VALUES (?1, ?2)", params![group_id, perm]).ok();
+        }
+    }
+
+    pub fn get_user_groups(&self, user_id: &str) -> Vec<(i64, String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT g.id, g.name, COALESCE(g.color, '#6c5ce7') FROM groups g JOIN user_groups ug ON g.id = ug.group_id WHERE ug.user_id = ?1 ORDER BY g.name").unwrap();
+        stmt.query_map(params![user_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn set_user_groups(&self, user_id: &str, group_ids: &[i64]) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM user_groups WHERE user_id = ?1", params![user_id]).ok();
+        for gid in group_ids {
+            conn.execute("INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?1, ?2)", params![user_id, gid]).ok();
+        }
+    }
+
+    pub fn get_user_permissions(&self, user_id: &str) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT gp.permission FROM group_permissions gp JOIN user_groups ug ON gp.group_id = ug.group_id WHERE ug.user_id = ?1 ORDER BY gp.permission"
+        ).unwrap();
+        stmt.query_map(params![user_id], |row| row.get(0))
+            .unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    pub fn get_group_members(&self, group_id: i64) -> Vec<(String, String)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT u.id, u.username FROM users u JOIN user_groups ug ON u.id = ug.user_id WHERE ug.group_id = ?1 ORDER BY u.username").unwrap();
+        stmt.query_map(params![group_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap().filter_map(|r| r.ok()).collect()
     }
 
     // === Alert Rules ===

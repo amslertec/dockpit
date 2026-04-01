@@ -149,6 +149,7 @@ async fn main() {
 
     // Seed default stack templates
     db.seed_default_templates();
+    db.seed_default_group();
 
     // Restore Docker registry logins from DB
     restore_docker_logins(&db).await;
@@ -236,6 +237,7 @@ async fn main() {
         .route("/api/snapshots/{container_name}", get(handlers::get_container_snapshots))
         .route("/api/snippets/{container_name}", get(handlers::get_snippets))
         .route("/api/snapshots/diff/{id1}/{id2}", get(handlers::get_snapshot_diff))
+        .route("/api/my-permissions", get(handlers::get_user_permissions_handler))
         .layer(middleware::from_fn(auth::auth_middleware));
 
     // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
@@ -313,6 +315,11 @@ async fn main() {
         .route("/api/users/{id}", put(handlers::update_user))
         .route("/api/users/{id}", delete(handlers::delete_user))
         .route("/api/users/{id}/reset-mfa", post(handlers::reset_user_mfa))
+        .route("/api/groups", get(handlers::list_groups))
+        .route("/api/groups", post(handlers::create_group))
+        .route("/api/groups/{id}", put(handlers::update_group))
+        .route("/api/groups/{id}", delete(handlers::delete_group))
+        .route("/api/users/{id}/groups", put(handlers::set_user_groups_handler))
         .layer(middleware::from_fn(auth::super_admin_middleware));
 
     // WebSocket routes (auth via query param)

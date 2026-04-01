@@ -531,12 +531,147 @@ fn env_name(state: &AppState, env_id: &str) -> String {
     state.db.get_environment(env_id).map(|e| e.name).unwrap_or_else(|| env_id.to_string())
 }
 
+// === Groups ===
+
+pub async fn list_groups(
+    State(state): State<Arc<AppState>>,
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
+    let groups = state.db.list_groups();
+    let result: Vec<serde_json::Value> = groups.iter().map(|(id, name, desc, is_default, created_at, color)| {
+        let members = state.db.get_group_members(*id);
+        let permissions = state.db.get_group_permissions(*id);
+        serde_json::json!({
+            "id": id, "name": name, "description": desc,
+            "is_default": is_default, "created_at": created_at,
+            "color": color,
+            "member_count": members.len(),
+            "members": members.iter().map(|(uid, uname)| serde_json::json!({"id": uid, "username": uname})).collect::<Vec<_>>(),
+            "permissions": permissions,
+        })
+    }).collect();
+    Json(ApiResponse::ok(result))
+}
+
+pub async fn create_group(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let description = req.get("description").and_then(|v| v.as_str());
+    if name.is_empty() { return Json(ApiResponse::err("Gruppenname erforderlich")); }
+    let color = req.get("color").and_then(|v| v.as_str());
+    match state.db.create_group(name, description, color) {
+        Ok(id) => {
+            // Set permissions if provided
+            if let Some(perms) = req.get("permissions").and_then(|v| v.as_array()) {
+                let perm_strs: Vec<String> = perms.iter().filter_map(|p| p.as_str().map(String::from)).collect();
+                state.db.set_group_permissions(id, &perm_strs);
+            }
+            state.db.log_audit(&audit_user(&headers), "group_create", Some(name), None);
+            Json(ApiResponse::ok("Gruppe erstellt".to_string()))
+        }
+        Err(e) => Json(ApiResponse::err(format!("Fehler: {}", e))),
+    }
+}
+
+pub async fn update_group(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    // Update name/description/color if provided
+    if let Some(name) = req.get("name").and_then(|v| v.as_str()) {
+        let desc = req.get("description").and_then(|v| v.as_str());
+        let color = req.get("color").and_then(|v| v.as_str());
+        state.db.update_group_info(id, name, desc, color).ok();
+    }
+    // Update permissions if provided
+    if let Some(perms) = req.get("permissions").and_then(|v| v.as_array()) {
+        let perm_strs: Vec<String> = perms.iter().filter_map(|p| p.as_str().map(String::from)).collect();
+        state.db.set_group_permissions(id, &perm_strs);
+    }
+    Json(ApiResponse::ok("Aktualisiert".to_string()))
+}
+
+pub async fn delete_group(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<i64>,
+) -> Json<ApiResponse<String>> {
+    match state.db.delete_group(id) {
+        Ok(_) => {
+            state.db.log_audit(&audit_user(&headers), "group_delete", None, None);
+            Json(ApiResponse::ok("Gruppe gelöscht".to_string()))
+        }
+        Err(_) => Json(ApiResponse::err("Standardgruppe kann nicht gelöscht werden")),
+    }
+}
+
+pub async fn set_user_groups_handler(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let group_ids: Vec<i64> = req.get("group_ids").and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default();
+    state.db.set_user_groups(&user_id, &group_ids);
+    Json(ApiResponse::ok("Gruppen aktualisiert".to_string()))
+}
+
+pub async fn get_user_permissions_handler(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<ApiResponse<serde_json::Value>> {
+    let claims = match extract_claims(&headers) {
+        Some(c) => c,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    let role = state.db.get_user_role(&claims.username).unwrap_or_else(|| "viewer".to_string());
+    // super_admin and admin get all permissions
+    if role == "super_admin" || role == "admin" {
+        return Json(ApiResponse::ok(serde_json::json!({
+            "role": role,
+            "permissions": ["*"],
+        })));
+    }
+    // editor gets container actions
+    if role == "editor" {
+        return Json(ApiResponse::ok(serde_json::json!({
+            "role": role,
+            "permissions": [
+                "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+                "page.networks", "page.monitoring", "page.health",
+                "action.container_start_stop", "action.container_restart",
+                "action.stack_deploy_stop",
+            ],
+        })));
+    }
+    // viewer gets read-only
+    if role == "viewer" {
+        return Json(ApiResponse::ok(serde_json::json!({
+            "role": role,
+            "permissions": [
+                "page.dashboard", "page.containers", "page.stacks", "page.images", "page.volumes",
+                "page.networks", "page.monitoring", "page.health",
+            ],
+        })));
+    }
+    // "user" role: permissions come from groups only
+    let permissions = state.db.get_user_permissions(&claims.sub);
+    Json(ApiResponse::ok(serde_json::json!({
+        "role": role,
+        "permissions": permissions,
+    })))
+}
+
 // === User Management (super_admin only) ===
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
-) -> Json<ApiResponse<Vec<UserInfo>>> {
+) -> Json<ApiResponse<Vec<serde_json::Value>>> {
     let claims = match extract_claims(&headers) {
         Some(c) => c,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
@@ -548,12 +683,16 @@ pub async fn list_users(
 
     let users = state.db.list_users()
         .into_iter()
-        .map(|(id, username, role, created_at, totp_enabled)| UserInfo {
-            id,
-            username,
-            role,
-            totp_enabled,
-            created_at,
+        .map(|(id, username, role, created_at, totp_enabled)| {
+            let user_groups = state.db.get_user_groups(&id);
+            serde_json::json!({
+                "id": id,
+                "username": username,
+                "role": role,
+                "totp_enabled": totp_enabled,
+                "created_at": created_at,
+                "groups": user_groups.iter().map(|(gid, gname, gcolor)| serde_json::json!({"id": gid, "name": gname, "color": gcolor})).collect::<Vec<_>>(),
+            })
         })
         .collect();
 
@@ -578,7 +717,7 @@ pub async fn create_user(
         return Json(ApiResponse::err("Benutzername min. 3 Zeichen, Passwort min. 6 Zeichen"));
     }
 
-    let valid_roles = ["super_admin", "admin", "editor", "viewer"];
+    let valid_roles = ["super_admin", "admin", "editor", "viewer", "user"];
     if !valid_roles.contains(&req.role.as_str()) {
         return Json(ApiResponse::err("Ungültige Rolle"));
     }
@@ -614,7 +753,7 @@ pub async fn update_user(
     }
 
     if let Some(ref new_role) = req.role {
-        let valid_roles = ["super_admin", "admin", "editor", "viewer"];
+        let valid_roles = ["super_admin", "admin", "editor", "viewer", "user"];
         if !valid_roles.contains(&new_role.as_str()) {
             return Json(ApiResponse::err("Ungültige Rolle"));
         }
