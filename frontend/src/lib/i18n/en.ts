@@ -272,6 +272,8 @@ export const en: Record<string, string> = {
 	'stacks.notStarted': 'No containers — Stack is not started',
 	'stacks.lines': 'lines',
 	'stacks.addFile': 'Add file',
+	'stacks.fromDockerRun': 'From Docker Run',
+	'stacks.convert': 'Convert',
 
 	// === Templates ===
 	'templates.title': 'Stack Templates',

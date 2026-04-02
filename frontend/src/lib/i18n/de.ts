@@ -272,6 +272,8 @@ export const de: Record<string, string> = {
 	'stacks.notStarted': 'Keine Container — Stack ist nicht gestartet',
 	'stacks.lines': 'Zeilen',
 	'stacks.addFile': 'Datei hinzufügen',
+	'stacks.fromDockerRun': 'Von Docker Run',
+	'stacks.convert': 'Konvertieren',
 
 	// === Environments ===
 	'env.title': 'Umgebungen',

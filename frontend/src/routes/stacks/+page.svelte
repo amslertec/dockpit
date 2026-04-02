@@ -56,6 +56,13 @@
 		];
 	}
 
+	// Docker Run converter state
+	let showRunConvert = $state(false);
+	let dockerRunInput = $state('');
+	let convertedYaml = $state('');
+	let convertError = $state('');
+	let convertedName = $state('');
+
 	let sortKey = $state<string>('name');
 	let sortAsc = $state(true);
 
@@ -234,6 +241,315 @@
 		} else toasts.error(r.error || $t('common.error'));
 	}
 
+	function parseDockerRun(input: string): { name: string; yaml: string } | { error: string } {
+		const cmd = input.trim().replace(/\\\n/g, ' ').replace(/\s+/g, ' ');
+		if (!cmd.startsWith('docker run')) return { error: 'Command must start with "docker run"' };
+
+		const parts: string[] = [];
+		let current = '';
+		let inQuote = '';
+		for (const ch of cmd) {
+			if ((ch === '"' || ch === "'") && !inQuote) { inQuote = ch; continue; }
+			if (ch === inQuote) { inQuote = ''; continue; }
+			if (ch === ' ' && !inQuote) { if (current) parts.push(current); current = ''; continue; }
+			current += ch;
+		}
+		if (current) parts.push(current);
+
+		// Skip "docker" and "run"
+		let i = 0;
+		while (i < parts.length && parts[i] !== 'run') i++;
+		i++; // skip "run"
+
+		let name = '';
+		let image = '';
+		const ports: string[] = [];
+		const volumes: string[] = [];
+		const envs: string[] = [];
+		const envFiles: string[] = [];
+		const labels: string[] = [];
+		const networks: string[] = [];
+		const capAdd: string[] = [];
+		const capDrop: string[] = [];
+		const devices: string[] = [];
+		const tmpfs: string[] = [];
+		const dns: string[] = [];
+		const extraHosts: string[] = [];
+		const securityOpt: string[] = [];
+		const ulimits: string[] = [];
+		const sysctls: string[] = [];
+		const logOpts: string[] = [];
+		let restart = '';
+		let workdir = '';
+		let user = '';
+		let hostname = '';
+		let domainname = '';
+		let entrypoint = '';
+		let memory = '';
+		let cpus = '';
+		let shmSize = '';
+		let pid = '';
+		let ipc = '';
+		let stopSignal = '';
+		let stopGrace = '';
+		let logDriver = '';
+		let healthCmd = '';
+		let healthInterval = '';
+		let healthRetries = '';
+		let healthTimeout = '';
+		let platform = '';
+		let privileged = false;
+		let readOnly = false;
+		let init = false;
+		let tty = false;
+		let stdinOpen = false;
+		const cmdArgs: string[] = [];
+		let imageFound = false;
+
+		while (i < parts.length) {
+			const p = parts[i];
+			if (imageFound) { cmdArgs.push(p); i++; continue; }
+
+			// Flags with values (--flag value or --flag=value)
+			const getVal = (): string => {
+				if (p.includes('=')) return p.split('=').slice(1).join('=');
+				i++;
+				return parts[i] || '';
+			};
+
+			if (p === '--name') { name = getVal(); }
+			else if (p === '-p' || p === '--publish') { ports.push(getVal()); }
+			else if (p === '-v' || p === '--volume') { volumes.push(getVal()); }
+			else if (p === '-e' || p === '--env') { envs.push(getVal()); }
+			else if (p === '--env-file') { envFiles.push(getVal()); }
+			else if (p === '--restart') { restart = getVal(); }
+			else if (p === '--network' || p === '--net') { networks.push(getVal()); }
+			else if (p === '-l' || p === '--label') { labels.push(getVal()); }
+			else if (p === '-w' || p === '--workdir') { workdir = getVal(); }
+			else if (p === '-u' || p === '--user') { user = getVal(); }
+			else if (p === '-h' || p === '--hostname') { hostname = getVal(); }
+			else if (p === '--domainname') { domainname = getVal(); }
+			else if (p === '--entrypoint') { entrypoint = getVal(); }
+			else if (p === '-m' || p === '--memory') { memory = getVal(); }
+			else if (p === '--cpus') { cpus = getVal(); }
+			else if (p === '--shm-size') { shmSize = getVal(); }
+			else if (p === '--pid') { pid = getVal(); }
+			else if (p === '--ipc') { ipc = getVal(); }
+			else if (p === '--cap-add') { capAdd.push(getVal()); }
+			else if (p === '--cap-drop') { capDrop.push(getVal()); }
+			else if (p === '--device') { devices.push(getVal()); }
+			else if (p === '--tmpfs') { tmpfs.push(getVal()); }
+			else if (p === '--dns') { dns.push(getVal()); }
+			else if (p === '--add-host' || p === '--extra-hosts') { extraHosts.push(getVal()); }
+			else if (p === '--security-opt') { securityOpt.push(getVal()); }
+			else if (p === '--ulimit') { ulimits.push(getVal()); }
+			else if (p === '--sysctl') { sysctls.push(getVal()); }
+			else if (p === '--log-driver') { logDriver = getVal(); }
+			else if (p === '--log-opt') { logOpts.push(getVal()); }
+			else if (p === '--stop-signal') { stopSignal = getVal(); }
+			else if (p === '--stop-timeout') { stopGrace = getVal() + 's'; }
+			else if (p === '--stop-grace-period') { stopGrace = getVal(); }
+			else if (p === '--health-cmd') { healthCmd = getVal(); }
+			else if (p === '--health-interval') { healthInterval = getVal(); }
+			else if (p === '--health-retries') { healthRetries = getVal(); }
+			else if (p === '--health-timeout') { healthTimeout = getVal(); }
+			else if (p === '--platform') { platform = getVal(); }
+			else if (p === '--gpus') { getVal(); }
+			else if (p.startsWith('--name=')) { name = p.split('=').slice(1).join('='); }
+			else if (p.startsWith('-p=') || p.startsWith('--publish=')) { ports.push(p.split('=').slice(1).join('=')); }
+			else if (p.startsWith('-e=') || p.startsWith('--env=')) { envs.push(p.split('=').slice(1).join('=')); }
+			// Boolean flags
+			else if (p === '-d' || p === '--detach') { /* skip */ }
+			else if (p === '--privileged') { privileged = true; }
+			else if (p === '--read-only') { readOnly = true; }
+			else if (p === '--init') { init = true; }
+			else if (p === '-t' || p === '--tty') { tty = true; }
+			else if (p === '-i' || p === '--interactive') { stdinOpen = true; }
+			else if (p === '--rm') { /* skip - not relevant for compose */ }
+			// Combined short flags like -dit
+			else if (p.startsWith('-') && !p.startsWith('--') && p.length > 2) {
+				for (const ch of p.slice(1)) {
+					if (ch === 'd') { /* detach */ }
+					else if (ch === 't') { tty = true; }
+					else if (ch === 'i') { stdinOpen = true; }
+				}
+			}
+			// Unknown --flag with value: skip flag + value
+			else if (p.startsWith('--') && i + 1 < parts.length && !parts[i + 1].startsWith('-')) {
+				i++; // skip the value of the unknown flag
+			}
+			// Image (first non-flag argument)
+			else if (!p.startsWith('-')) {
+				image = p;
+				imageFound = true;
+			}
+			i++;
+		}
+
+		if (!image) return { error: 'No image specified' };
+
+		const svcName = name || image.split(':')[0].split('/').pop() || 'app';
+
+		let yaml = 'services:\n';
+		yaml += `  ${svcName}:\n`;
+		yaml += `    image: ${image}\n`;
+		if (name) yaml += `    container_name: ${name}\n`;
+		if (restart) yaml += `    restart: ${restart}\n`;
+		if (hostname) yaml += `    hostname: ${hostname}\n`;
+		if (domainname) yaml += `    domainname: ${domainname}\n`;
+		if (user) yaml += `    user: "${user}"\n`;
+		if (workdir) yaml += `    working_dir: ${workdir}\n`;
+		if (entrypoint) yaml += `    entrypoint: ${entrypoint}\n`;
+		if (privileged) yaml += `    privileged: true\n`;
+		if (readOnly) yaml += `    read_only: true\n`;
+		if (init) yaml += `    init: true\n`;
+		if (tty) yaml += `    tty: true\n`;
+		if (stdinOpen) yaml += `    stdin_open: true\n`;
+		if (pid) yaml += `    pid: "${pid}"\n`;
+		if (ipc) yaml += `    ipc: "${ipc}"\n`;
+		if (shmSize) yaml += `    shm_size: "${shmSize}"\n`;
+		if (stopSignal) yaml += `    stop_signal: ${stopSignal}\n`;
+		if (stopGrace) yaml += `    stop_grace_period: ${stopGrace}\n`;
+		if (platform) yaml += `    platform: ${platform}\n`;
+		if (memory || cpus) {
+			if (memory) yaml += `    mem_limit: ${memory}\n`;
+			if (cpus) yaml += `    cpus: ${cpus}\n`;
+		}
+		if (ports.length > 0) {
+			yaml += '    ports:\n';
+			for (const port of ports) yaml += `      - "${port}"\n`;
+		}
+		if (volumes.length > 0) {
+			yaml += '    volumes:\n';
+			for (const v of volumes) yaml += `      - ${v}\n`;
+		}
+		if (envs.length > 0) {
+			yaml += '    environment:\n';
+			for (const e of envs) yaml += `      - ${e}\n`;
+		}
+		if (envFiles.length > 0) {
+			yaml += '    env_file:\n';
+			for (const f of envFiles) yaml += `      - ${f}\n`;
+		}
+		if (labels.length > 0) {
+			yaml += '    labels:\n';
+			for (const l of labels) yaml += `      - ${l}\n`;
+		}
+		if (networks.length > 0) {
+			yaml += '    networks:\n';
+			for (const n of networks) yaml += `      - ${n}\n`;
+		}
+		if (capAdd.length > 0) {
+			yaml += '    cap_add:\n';
+			for (const c of capAdd) yaml += `      - ${c}\n`;
+		}
+		if (capDrop.length > 0) {
+			yaml += '    cap_drop:\n';
+			for (const c of capDrop) yaml += `      - ${c}\n`;
+		}
+		if (devices.length > 0) {
+			yaml += '    devices:\n';
+			for (const d of devices) yaml += `      - ${d}\n`;
+		}
+		if (tmpfs.length > 0) {
+			yaml += '    tmpfs:\n';
+			for (const t of tmpfs) yaml += `      - ${t}\n`;
+		}
+		if (dns.length > 0) {
+			yaml += '    dns:\n';
+			for (const d of dns) yaml += `      - ${d}\n`;
+		}
+		if (extraHosts.length > 0) {
+			yaml += '    extra_hosts:\n';
+			for (const h of extraHosts) yaml += `      - "${h}"\n`;
+		}
+		if (securityOpt.length > 0) {
+			yaml += '    security_opt:\n';
+			for (const s of securityOpt) yaml += `      - ${s}\n`;
+		}
+		if (sysctls.length > 0) {
+			yaml += '    sysctls:\n';
+			for (const s of sysctls) yaml += `      - ${s}\n`;
+		}
+		if (logDriver || logOpts.length > 0) {
+			yaml += '    logging:\n';
+			if (logDriver) yaml += `      driver: ${logDriver}\n`;
+			if (logOpts.length > 0) {
+				yaml += '      options:\n';
+				for (const o of logOpts) {
+					const [k, ...v] = o.split('=');
+					yaml += `        ${k}: "${v.join('=')}"\n`;
+				}
+			}
+		}
+		if (healthCmd) {
+			yaml += '    healthcheck:\n';
+			yaml += `      test: ["CMD-SHELL", "${healthCmd}"]\n`;
+			if (healthInterval) yaml += `      interval: ${healthInterval}\n`;
+			if (healthTimeout) yaml += `      timeout: ${healthTimeout}\n`;
+			if (healthRetries) yaml += `      retries: ${healthRetries}\n`;
+		}
+		if (cmdArgs.length > 0) {
+			yaml += `    command: ${cmdArgs.join(' ')}\n`;
+		}
+
+		// Add named volumes section if any volume uses a named volume (no / or . prefix)
+		const namedVolumes = volumes.filter(v => {
+			const src = v.split(':')[0];
+			return !src.startsWith('/') && !src.startsWith('.') && !src.startsWith('~');
+		});
+		if (namedVolumes.length > 0) {
+			yaml += '\nvolumes:\n';
+			for (const v of namedVolumes) {
+				const volName = v.split(':')[0];
+				yaml += `  ${volName}:\n`;
+			}
+		}
+
+		// Add networks section if any non-default network
+		const customNetworks = networks.filter(n => !['bridge', 'host', 'none'].includes(n));
+		if (customNetworks.length > 0) {
+			yaml += '\nnetworks:\n';
+			for (const n of customNetworks) {
+				yaml += `  ${n}:\n    external: true\n`;
+			}
+		}
+
+		return { name: svcName, yaml };
+	}
+
+	function convertDockerRun() {
+		convertError = '';
+		convertedYaml = '';
+		const result = parseDockerRun(dockerRunInput);
+		if ('error' in result) {
+			convertError = result.error;
+		} else {
+			convertedYaml = result.yaml;
+			convertedName = result.name;
+		}
+	}
+
+	async function createFromConverted() {
+		if (!convertedYaml || !convertedName) return;
+		saving = true;
+		const r = await api.post<string>(`/env/${$selectedEnv}/stacks`, {
+			name: convertedName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+			compose_content: convertedYaml,
+			env_content: null,
+		});
+		saving = false;
+		if (r.success) {
+			showRunConvert = false;
+			dockerRunInput = '';
+			convertedYaml = '';
+			toasts.success($t('stacks.created', { name: convertedName }));
+			load();
+		} else {
+			toasts.error(r.error || $t('common.error'));
+		}
+	}
+
 	function handlePageChange(p: number, pp: number) { page = p; perPage = pp; }
 </script>
 
@@ -275,6 +591,9 @@
 			<input bind:value={search} placeholder={$t('common.search')}
 				class="bg-[var(--input-bg)] border border-[var(--input-border)] rounded-[var(--radius-md)] px-2.5 py-1.5 text-xs w-44 focus:border-[var(--input-focus)] focus:outline-none focus:shadow-[0_0_0_3px_var(--input-focus-ring)] transition-all duration-200" />
 			{#if $canDoAction('action.stack_create_delete')}
+				<Button variant="warning" size="sm" onclick={() => showRunConvert = true} title={$t('stacks.fromDockerRun')}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+				</Button>
 				<Button variant="purple" size="sm" onclick={() => showTemplates = true} title={$t('templates.fromTemplate')}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>
 				</Button>
@@ -583,6 +902,39 @@
 			</div>
 		</div>
 	</div>
+{/if}
+
+{#if showRunConvert}
+	<Modal title={$t('stacks.fromDockerRun')} onclose={() => { showRunConvert = false; convertedYaml = ''; convertError = ''; dockerRunInput = ''; }}>
+		<div class="space-y-4">
+			<div>
+				<label class="block text-xs font-medium text-secondary mb-1">Docker Run Command</label>
+				<textarea bind:value={dockerRunInput} spellcheck={false}
+					class="w-full h-[120px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"
+					placeholder='docker run -d --name myapp -p 8080:80 -v data:/app/data -e NODE_ENV=production --restart unless-stopped myimage:latest'></textarea>
+			</div>
+			<Button variant="primary" size="sm" onclick={convertDockerRun}>{$t('stacks.convert')}</Button>
+			{#if convertError}
+				<p class="text-[var(--red)] text-xs">{convertError}</p>
+			{/if}
+			{#if convertedYaml}
+				<div>
+					<div class="flex items-center justify-between mb-1">
+						<label class="block text-xs font-medium text-secondary">docker-compose.yml</label>
+						<TextInput bind:value={convertedName} label="" placeholder="stack-name" id="cn" class="w-[180px]" />
+					</div>
+					<textarea bind:value={convertedYaml} spellcheck={false}
+						class="w-full h-[300px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"></textarea>
+				</div>
+			{/if}
+		</div>
+		{#if convertedYaml}
+			<div class="flex justify-end gap-2 mt-4">
+				<Button variant="danger" size="sm" onclick={() => { showRunConvert = false; convertedYaml = ''; convertError = ''; dockerRunInput = ''; }}>{$t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" onclick={createFromConverted} loading={saving}>{$t('stacks.createStack')}</Button>
+			</div>
+		{/if}
+	</Modal>
 {/if}
 
 {#if confirmDlg}
