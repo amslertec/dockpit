@@ -1095,7 +1095,9 @@ impl Database {
     }
 
     pub fn seed_default_templates(&self) {
-        // No default templates — users create their own via the UI
+        // Remove legacy default templates (cleanup from older versions)
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM stack_templates WHERE is_default = 1", []).ok();
     }
 
     // === Audit Log ===
