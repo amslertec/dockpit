@@ -38,6 +38,12 @@
 	let newTemplateEnv = $state('');
 	let newTemplateIcon = $state('📦');
 	const iconOptions = ['📦', '🐳', '🔀', '📊', '📈', '🐘', '🔴', '📝', '☁️', '🛡️', '🗼', '🌐', '⚙️', '🔧', '🗄️', '💾', '🔒', '📡', '🎯', '🚀'];
+	let editTemplate = $state<any | null>(null);
+	let editTplName = $state('');
+	let editTplDesc = $state('');
+	let editTplCompose = $state('');
+	let editTplEnv = $state('');
+	let editTplIcon = $state('📦');
 
 	// Create modal state
 	let newName = $state('');
@@ -239,6 +245,33 @@
 			showSaveTemplate = false;
 			loadTemplates();
 		} else toasts.error(r.error || $t('common.error'));
+	}
+
+	function openEditTemplate(tpl: any) {
+		editTemplate = tpl;
+		editTplName = tpl.name;
+		editTplDesc = tpl.description || '';
+		editTplCompose = tpl.compose_content;
+		editTplEnv = tpl.env_content || '';
+		editTplIcon = tpl.icon || '📦';
+	}
+
+	async function saveEditTemplate() {
+		if (!editTemplate) return;
+		const r = await api.put<string>(`/templates/${editTemplate.id}`, {
+			name: editTplName,
+			description: editTplDesc || null,
+			compose_content: editTplCompose,
+			env_content: editTplEnv || null,
+			icon: editTplIcon,
+		});
+		if (r.success) {
+			editTemplate = null;
+			toasts.success($t('common.save'));
+			loadTemplates();
+		} else {
+			toasts.error(r.error || $t('common.error'));
+		}
 	}
 
 	function parseDockerRun(input: string): { name: string; yaml: string } | { error: string } {
@@ -550,6 +583,26 @@
 		}
 	}
 
+	async function saveRunAsTemplate() {
+		if (!convertedYaml || !convertedName) return;
+		const r = await api.post<any>('/templates', {
+			name: convertedName,
+			description: 'Created from Docker Run command',
+			category: 'custom',
+			compose_content: convertedYaml,
+			icon: '📦'
+		});
+		if (r.success) {
+			toasts.success($t('templates.saved'));
+			showRunConvert = false;
+			dockerRunInput = '';
+			convertedYaml = '';
+			loadTemplates();
+		} else {
+			toasts.error(r.error || $t('common.error'));
+		}
+	}
+
 	function handlePageChange(p: number, pp: number) { page = p; perPage = pp; }
 </script>
 
@@ -736,17 +789,34 @@
 						class="relative group bg-[var(--bg-1)] border border-theme rounded-xl p-4 text-center transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[0_0_16px_-4px_var(--accent)] cursor-pointer flex flex-col items-center gap-2"
 						onclick={() => useTemplate(tpl)}
 					>
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="absolute top-2 {tpl.is_default ? 'right-2' : 'right-8'} w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-muted hover:text-[var(--accent)] hover:border-[var(--accent)] opacity-0 group-hover:opacity-100 transition-all z-10 cursor-pointer"
+							onclick={(e) => { e.stopPropagation(); openEditTemplate(tpl); }}
+							title={$t('common.edit')}
+						>
+							<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+						</span>
 						{#if !tpl.is_default}
-							<button
-								class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 opacity-0 group-hover:opacity-100 transition-all z-10"
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<span
+								class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded-full bg-[var(--bg-0)] border border-theme text-[var(--red)] hover:border-[var(--red)]/40 hover:bg-[var(--red)]/8 opacity-0 group-hover:opacity-100 transition-all z-10 cursor-pointer"
 								onclick={(e) => { e.stopPropagation(); confirmDlg = { message: $t('templates.confirmDelete'), action: () => { confirmDlg = null; deleteTemplate(tpl.id); } }; }}
 								title={$t('common.delete')}
 							>
 								<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
+							</span>
 						{/if}
-						<div class="w-10 h-10 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center text-xl shrink-0">
-							{tpl.icon || '📦'}
+						<div class="w-10 h-10 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center shrink-0 overflow-hidden">
+							{#if tpl.icon?.startsWith('url:')}
+								<img src={tpl.icon.slice(4)} alt={tpl.name} class="w-7 h-7 object-contain" />
+							{:else if tpl.icon?.startsWith('data:')}
+								<img src={tpl.icon} alt={tpl.name} class="w-7 h-7 object-contain" />
+							{:else}
+								<span class="text-xl">{tpl.icon || '📦'}</span>
+							{/if}
 						</div>
 						<div class="font-semibold text-xs text-primary truncate w-full">{tpl.name}</div>
 						{#if tpl.description}
@@ -780,19 +850,33 @@
 		<div class="space-y-3">
 			<div class="flex items-start gap-3">
 				<div class="shrink-0">
-					<label class="block text-xs font-medium text-secondary mb-1">Icon</label>
-					<div class="relative">
-						<button
-							class="w-10 h-10 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center text-xl hover:border-[var(--accent)] transition-colors"
-							onclick={(e) => { e.preventDefault(); const el = (e.currentTarget as HTMLElement).nextElementSibling; if (el) el.classList.toggle('hidden'); }}
-						>{newTemplateIcon}</button>
-						<div class="hidden absolute top-12 left-0 z-50 bg-card border border-theme rounded-lg shadow-lg p-2 grid grid-cols-5 gap-1 w-[180px]">
-							{#each iconOptions as ico}
-								<button
-									class="w-8 h-8 rounded-md flex items-center justify-center text-lg hover:bg-[var(--bg-hover)] transition-colors {newTemplateIcon === ico ? 'bg-[var(--bg-hover)] ring-1 ring-[var(--accent)]' : ''}"
-									onclick={(e) => { e.preventDefault(); newTemplateIcon = ico; (e.currentTarget as HTMLElement).parentElement?.classList.add('hidden'); }}
-								>{ico}</button>
-							{/each}
+					<div>
+						<label class="block text-xs font-medium text-secondary mb-1.5">Logo</label>
+						<div class="flex items-center gap-3">
+							<div class="w-12 h-12 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center overflow-hidden shrink-0">
+								{#if newTemplateIcon.startsWith('data:')}
+									<img src={newTemplateIcon} alt="" class="w-8 h-8 object-contain" />
+								{:else if newTemplateIcon.startsWith('url:')}
+									<img src={newTemplateIcon.slice(4)} alt="" class="w-8 h-8 object-contain" />
+								{:else}
+									<span class="text-2xl">{newTemplateIcon}</span>
+								{/if}
+							</div>
+							<div class="flex flex-col gap-1.5">
+								<label class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--radius-md)] border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/8 transition cursor-pointer">
+									<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+									Upload
+									<input type="file" accept="image/*" class="hidden" onchange={(e) => {
+										const file = (e.target as HTMLInputElement).files?.[0];
+										if (file) {
+											const reader = new FileReader();
+											reader.onload = () => { newTemplateIcon = reader.result as string; };
+											reader.readAsDataURL(file);
+										}
+									}} />
+								</label>
+								<button class="text-[10px] text-muted hover:text-primary" onclick={() => newTemplateIcon = '📦'}>Reset</button>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -932,8 +1016,65 @@
 			<div class="flex justify-end gap-2 mt-4">
 				<Button variant="danger" size="sm" onclick={() => { showRunConvert = false; convertedYaml = ''; convertError = ''; dockerRunInput = ''; }}>{$t('common.cancel')}</Button>
 				<Button variant="primary" size="sm" onclick={createFromConverted} loading={saving}>{$t('stacks.createStack')}</Button>
+				<Button variant="purple" size="sm" onclick={saveRunAsTemplate} title={$t('templates.saveAsTemplate')}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+					{$t('templates.saveAsTemplate')}
+				</Button>
 			</div>
 		{/if}
+	</Modal>
+{/if}
+
+{#if editTemplate}
+	<Modal title={$t('common.edit') + ': ' + editTemplate.name} onclose={() => editTemplate = null}>
+		<div class="space-y-3">
+			<div class="flex items-start gap-3">
+				<div class="shrink-0">
+					<label class="block text-xs font-medium text-secondary mb-1">Logo</label>
+					<div class="w-12 h-12 rounded-lg bg-[var(--bg-0)] border border-theme flex items-center justify-center overflow-hidden shrink-0">
+						{#if editTplIcon.startsWith('data:')}
+							<img src={editTplIcon} alt="" class="w-8 h-8 object-contain" />
+						{:else if editTplIcon.startsWith('url:')}
+							<img src={editTplIcon.slice(4)} alt="" class="w-8 h-8 object-contain" />
+						{:else}
+							<span class="text-2xl">{editTplIcon}</span>
+						{/if}
+					</div>
+					<label class="mt-1.5 inline-flex items-center gap-1 px-2 py-1 text-[9px] font-medium rounded border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/8 transition cursor-pointer">
+						<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+						Upload
+						<input type="file" accept="image/*" class="hidden" onchange={(e) => {
+							const file = (e.target as HTMLInputElement).files?.[0];
+							if (file) {
+								const reader = new FileReader();
+								reader.onload = () => { editTplIcon = reader.result as string; };
+								reader.readAsDataURL(file);
+							}
+						}} />
+					</label>
+				</div>
+				<div class="flex-1 space-y-3">
+					<TextInput bind:value={editTplName} label={$t('templates.templateName')} required id="etn" />
+					<TextInput bind:value={editTplDesc} label={$t('templates.templateDesc')} id="etd" />
+				</div>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-secondary mb-1">docker-compose.yml</label>
+				<textarea bind:value={editTplCompose} spellcheck={false}
+					class="w-full h-[200px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"
+					placeholder="services:"></textarea>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-secondary mb-1">.env</label>
+				<textarea bind:value={editTplEnv} spellcheck={false}
+					class="w-full h-[80px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border border-theme rounded-lg"
+					placeholder="KEY=value"></textarea>
+			</div>
+		</div>
+		<div class="flex justify-end gap-2 mt-4">
+			<Button variant="danger" size="sm" onclick={() => editTemplate = null}>{$t('common.cancel')}</Button>
+			<Button variant="primary" size="sm" onclick={saveEditTemplate}>{$t('common.save')}</Button>
+		</div>
 	</Modal>
 {/if}
 

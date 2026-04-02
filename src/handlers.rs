@@ -3347,6 +3347,30 @@ pub async fn create_template(
     }
 }
 
+pub async fn update_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<ApiResponse<String>> {
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let description = req.get("description").and_then(|v| v.as_str());
+    let compose_content = req.get("compose_content").and_then(|v| v.as_str()).unwrap_or("");
+    let env_content = req.get("env_content").and_then(|v| v.as_str());
+    let icon = req.get("icon").and_then(|v| v.as_str());
+    if name.is_empty() || compose_content.is_empty() {
+        return Json(ApiResponse::err("Name and compose content required"));
+    }
+    match state.db.update_template(&id, name, description, compose_content, env_content) {
+        Ok(_) => {
+            if let Some(ico) = icon {
+                state.db.update_template_icon(&id, ico).ok();
+            }
+            Json(ApiResponse::ok("Template updated".into()))
+        }
+        Err(e) => Json(ApiResponse::err(e.to_string())),
+    }
+}
+
 pub async fn delete_template(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,

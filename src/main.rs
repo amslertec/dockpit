@@ -294,6 +294,7 @@ async fn main() {
         .route("/api/templates", get(handlers::list_templates))
         .route("/api/templates", post(handlers::create_template))
         .route("/api/templates/{id}", get(handlers::get_template))
+        .route("/api/templates/{id}", put(handlers::update_template))
         .route("/api/templates/{id}", delete(handlers::delete_template))
         .route("/api/env/{env_id}/vulnerabilities", get(handlers::env_get_vulnerabilities))
         .route("/api/env/{env_id}/vulnerabilities/scan", post(handlers::env_scan_vulnerabilities))

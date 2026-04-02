@@ -1077,8 +1077,14 @@ impl Database {
 
     pub fn update_template(&self, id: &str, name: &str, description: Option<&str>, compose_content: &str, env_content: Option<&str>) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("UPDATE stack_templates SET name = ?1, description = ?2, compose_content = ?3, env_content = ?4 WHERE id = ?5 AND is_default = 0",
+        conn.execute("UPDATE stack_templates SET name = ?1, description = ?2, compose_content = ?3, env_content = ?4 WHERE id = ?5",
             params![name, description, compose_content, env_content, id])?;
+        Ok(())
+    }
+
+    pub fn update_template_icon(&self, id: &str, icon: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE stack_templates SET icon = ?1 WHERE id = ?2", params![icon, id])?;
         Ok(())
     }
 
@@ -1089,24 +1095,7 @@ impl Database {
     }
 
     pub fn seed_default_templates(&self) {
-        let defaults = vec![
-            ("tpl-nginx-proxy", "Nginx Proxy Manager", "Reverse proxy with free SSL certificates", "proxy", "services:\n  npm:\n    image: jc21/nginx-proxy-manager:latest\n    container_name: nginx-proxy-manager\n    restart: unless-stopped\n    ports:\n      - \"80:80\"\n      - \"443:443\"\n      - \"81:81\"\n    volumes:\n      - npm_data:/data\n      - npm_letsencrypt:/etc/letsencrypt\n\nvolumes:\n  npm_data:\n  npm_letsencrypt:", "🔀"),
-            ("tpl-portainer", "Portainer", "Docker management UI", "management", "services:\n  portainer:\n    image: portainer/portainer-ce:latest\n    container_name: portainer\n    restart: unless-stopped\n    ports:\n      - \"9443:9443\"\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock:ro\n      - portainer_data:/data\n\nvolumes:\n  portainer_data:", "🐳"),
-            ("tpl-uptime-kuma", "Uptime Kuma", "Self-hosted monitoring tool", "monitoring", "services:\n  uptime-kuma:\n    image: louislam/uptime-kuma:1\n    container_name: uptime-kuma\n    restart: unless-stopped\n    ports:\n      - \"3001:3001\"\n    volumes:\n      - uptime_data:/app/data\n\nvolumes:\n  uptime_data:", "📊"),
-            ("tpl-postgres", "PostgreSQL", "Reliable SQL database", "database", "services:\n  postgres:\n    image: postgres:16-alpine\n    container_name: postgres\n    restart: unless-stopped\n    ports:\n      - \"5432:5432\"\n    environment:\n      - POSTGRES_USER=admin\n      - POSTGRES_PASSWORD=changeme\n      - POSTGRES_DB=mydb\n    volumes:\n      - pg_data:/var/lib/postgresql/data\n\nvolumes:\n  pg_data:", "🐘"),
-            ("tpl-redis", "Redis", "In-memory cache and message broker", "database", "services:\n  redis:\n    image: redis:7-alpine\n    container_name: redis\n    restart: unless-stopped\n    ports:\n      - \"6379:6379\"\n    volumes:\n      - redis_data:/data\n    command: redis-server --appendonly yes\n\nvolumes:\n  redis_data:", "🔴"),
-            ("tpl-grafana", "Grafana + Prometheus", "Monitoring stack with dashboards", "monitoring", "services:\n  grafana:\n    image: grafana/grafana:latest\n    container_name: grafana\n    restart: unless-stopped\n    ports:\n      - \"3000:3000\"\n    volumes:\n      - grafana_data:/var/lib/grafana\n    environment:\n      - GF_SECURITY_ADMIN_PASSWORD=admin\n\n  prometheus:\n    image: prom/prometheus:latest\n    container_name: prometheus\n    restart: unless-stopped\n    ports:\n      - \"9090:9090\"\n    volumes:\n      - prom_data:/prometheus\n\nvolumes:\n  grafana_data:\n  prom_data:", "📈"),
-            ("tpl-wordpress", "WordPress", "CMS with MySQL database", "web", "services:\n  wordpress:\n    image: wordpress:latest\n    container_name: wordpress\n    restart: unless-stopped\n    ports:\n      - \"8080:80\"\n    environment:\n      - WORDPRESS_DB_HOST=wordpress-db\n      - WORDPRESS_DB_USER=wp\n      - WORDPRESS_DB_PASSWORD=changeme\n      - WORDPRESS_DB_NAME=wordpress\n    volumes:\n      - wp_data:/var/www/html\n    depends_on:\n      - wordpress-db\n\n  wordpress-db:\n    image: mysql:8.0\n    container_name: wordpress-db\n    restart: unless-stopped\n    environment:\n      - MYSQL_DATABASE=wordpress\n      - MYSQL_USER=wp\n      - MYSQL_PASSWORD=changeme\n      - MYSQL_ROOT_PASSWORD=rootpw\n    volumes:\n      - wp_db_data:/var/lib/mysql\n\nvolumes:\n  wp_data:\n  wp_db_data:", "📝"),
-            ("tpl-nextcloud", "Nextcloud", "Self-hosted cloud storage", "storage", "services:\n  nextcloud:\n    image: nextcloud:latest\n    container_name: nextcloud\n    restart: unless-stopped\n    ports:\n      - \"8081:80\"\n    volumes:\n      - nc_data:/var/www/html\n    environment:\n      - SQLITE_DATABASE=nextcloud\n\nvolumes:\n  nc_data:", "☁️"),
-            ("tpl-pihole", "Pi-hole", "Network-wide ad blocker", "network", "services:\n  pihole:\n    image: pihole/pihole:latest\n    container_name: pihole\n    restart: unless-stopped\n    ports:\n      - \"53:53/tcp\"\n      - \"53:53/udp\"\n      - \"8082:80\"\n    environment:\n      - WEBPASSWORD=changeme\n    volumes:\n      - pihole_etc:/etc/pihole\n      - pihole_dns:/etc/dnsmasq.d\n\nvolumes:\n  pihole_etc:\n  pihole_dns:", "🛡️"),
-            ("tpl-watchtower", "Watchtower", "Automatic container updates", "management", "services:\n  watchtower:\n    image: containrrr/watchtower:latest\n    container_name: watchtower\n    restart: unless-stopped\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n    environment:\n      - WATCHTOWER_CLEANUP=true\n      - WATCHTOWER_POLL_INTERVAL=86400", "🗼"),
-        ];
-
-        let conn = self.conn.lock().unwrap();
-        for (id, name, desc, cat, compose, icon) in defaults {
-            conn.execute("INSERT OR IGNORE INTO stack_templates (id, name, description, category, compose_content, icon, is_default) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
-                params![id, name, desc, cat, compose, icon]).ok();
-        }
+        // No default templates — users create their own via the UI
     }
 
     // === Audit Log ===
