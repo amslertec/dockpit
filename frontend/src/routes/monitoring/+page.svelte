@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { canSeePage } from '$lib/stores/auth';
 	import { statsStore, currentStats } from '$lib/stores/stats';
@@ -67,17 +67,10 @@
 		if (!$canSeePage('page.monitoring')) goto('/profile');
 	});
 
-	onMount(() => {
-		if ($selectedEnv) statsStore.connect($selectedEnv);
-	});
-
-	onDestroy(() => {
-		statsStore.disconnect();
-	});
-
 	$effect(() => {
 		const envId = $selectedEnv;
 		if (envId) statsStore.connect(envId);
+		return () => statsStore.disconnect();
 	});
 
 	function sortIndicator(key: keyof ContainerStats): string {

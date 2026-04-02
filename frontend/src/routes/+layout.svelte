@@ -140,6 +140,19 @@
 		ready = true;
 	});
 
+	// Poll permissions every 5 minutes (picks up group changes without re-login)
+	let permInterval: ReturnType<typeof setInterval> | undefined;
+	$effect(() => {
+		if ($auth.token && ready) {
+			if (permInterval) clearInterval(permInterval);
+			permInterval = setInterval(async () => {
+				const r = await api.get<{role: string; permissions: string[]}>('/my-permissions');
+				if (r.success && r.data) auth.setPermissions(r.data.permissions);
+			}, 300000); // 5 minutes
+		}
+		return () => { if (permInterval) clearInterval(permInterval); };
+	});
+
 	// Reactive fallback: if environments weren't loaded yet (e.g. timing issue),
 	// try again whenever auth token becomes available
 	$effect(() => {

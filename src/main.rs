@@ -245,16 +245,12 @@ async fn main() {
         .route("/api/settings/email/test", post(handlers::test_email))
         .layer(middleware::from_fn(auth::auth_middleware));
 
-    // === EDITOR+ routes (start/stop/restart containers, deploy stacks) ===
-    let editor_routes = Router::new()
+    // === Action routes (permissions checked by frontend + group system) ===
+    let action_routes = Router::new()
         .route("/api/env/{env_id}/containers/{container_id}/action", post(handlers::env_container_action))
         .route("/api/env/{env_id}/stacks/{name}/deploy", post(handlers::env_deploy_stack))
         .route("/api/env/{env_id}/stacks/{name}/stop", post(handlers::env_stop_stack))
         .route("/api/env/{env_id}/stacks/{name}/restart", post(handlers::env_restart_stack))
-        .layer(middleware::from_fn(auth::editor_middleware));
-
-    // === ADMIN+ routes (create/delete/modify resources) ===
-    let admin_routes = Router::new()
         .route("/api/environments", post(handlers::create_environment))
         .route("/api/environments/{id}", put(handlers::update_environment))
         .route("/api/environments/{id}", delete(handlers::delete_environment))
@@ -309,7 +305,7 @@ async fn main() {
         .route("/api/scheduled-jobs/{id}", put(handlers::update_scheduled_job))
         .route("/api/scheduled-jobs/{id}", delete(handlers::delete_scheduled_job))
         .route("/api/scheduled-jobs/{id}/run", post(handlers::run_scheduled_job))
-        .layer(middleware::from_fn(auth::admin_middleware));
+        .layer(middleware::from_fn(auth::auth_middleware));
 
     // === User management routes (permission checked in handlers) ===
     let super_admin_routes = Router::new()
@@ -334,8 +330,7 @@ async fn main() {
     let app = Router::new()
         .merge(public_routes)
         .merge(viewer_routes)
-        .merge(editor_routes)
-        .merge(admin_routes)
+        .merge(action_routes)
         .merge(super_admin_routes)
         .merge(ws_routes)
         .fallback(serve_frontend)
