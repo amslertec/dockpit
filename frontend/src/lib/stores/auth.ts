@@ -70,18 +70,25 @@ export const isViewer = derived(auth, $a => $a.role === 'viewer' && $a.permissio
 
 // New permission-based derived stores
 export const userPermissions = derived(auth, $a => $a.permissions);
+export const permissionsLoaded = derived(auth, $a => {
+	// super_admin doesn't need permissions loaded, traditional roles with saved perms are OK
+	if ($a.role === 'super_admin') return true;
+	// If permissions array is empty AND we have a token, permissions haven't been loaded yet
+	if ($a.token && $a.permissions.length === 0 && $a.role !== 'super_admin') return false;
+	return true;
+});
+
 export const canSeePage = derived(auth, $a => {
 	return (page: string): boolean => {
-		// super_admin always has full access
 		if ($a.role === 'super_admin') return true;
-		// All other roles: check group permissions
+		// Don't deny if permissions haven't loaded yet
+		if ($a.token && $a.permissions.length === 0) return true;
 		return hasPerm($a.permissions, page);
 	};
 });
 
 export const canDoAction = derived(auth, $a => {
 	return (action: string): boolean => {
-		// super_admin always has full access
 		if ($a.role === 'super_admin') return true;
 		// All other roles: check group permissions
 		return hasPerm($a.permissions, action);
