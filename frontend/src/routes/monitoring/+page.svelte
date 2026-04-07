@@ -6,8 +6,10 @@
 	import { selectedEnv } from '$lib/stores/environment';
 	import { t } from '$lib/i18n';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { ContainerStats } from '$lib/api/types';
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let search = $state('');
 	let sortKey = $state<keyof ContainerStats>('cpu_percent');
 	let sortAsc = $state(false);
@@ -62,6 +64,10 @@
 	const containerCount = $derived(($currentStats || []).length);
 
 	const hasData = $derived($currentStats && $currentStats.length > 0);
+
+	$effect(() => {
+		if (tableEl && paged.length > 0) initResizableColumns(tableEl);
+	});
 
 	$effect(() => {
 		if (!$canSeePage('page.monitoring')) goto('/profile');
@@ -133,7 +139,7 @@
 	{:else}
 		<div class="bg-card border border-[var(--border)] rounded-[var(--radius-lg)] overflow-hidden">
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table bind:this={tableEl} class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)] text-left text-[var(--text-muted)]">
 							<th class="px-4 py-3 font-medium cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>

@@ -8,12 +8,16 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { AuditEntry, AuditResponse } from '$lib/api/types';
 
 	$effect(() => {
 		if (!$canSeePage('page.audit')) goto('/profile');
 	});
 
+	$effect(() => { if (tableEl && !loading && entries.length > 0) initResizableColumns(tableEl); });
+
+	let tableEl: HTMLTableElement | undefined = $state();
 	let entries = $state<AuditEntry[]>([]);
 	let loading = $state(true);
 	let total = $state(0);
@@ -224,7 +228,7 @@
 			</div>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table bind:this={tableEl} class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)]">
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('audit.time')}</th>

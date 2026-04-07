@@ -11,8 +11,10 @@
 	import { canManageDocker, canDoAction, canSeePage } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { NetworkInfo } from '$lib/api/types';
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let networks = $state<NetworkInfo[]>([]);
 	let loading = $state(true);
 	let search = $state('');
@@ -67,6 +69,7 @@
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
 	$effect(() => { search; filter; page = 1; });
+	$effect(() => { if (tableEl && !loading && networks.length > 0) initResizableColumns(tableEl); });
 
 	async function load() {
 		if (!$selectedEnv) return;
@@ -184,7 +187,7 @@
 		<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin"></div></div>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full">
+			<table bind:this={tableEl} class="w-full">
 				<thead><tr class="border-b border-theme">
 					{#if $canDoAction('action.network_delete')}<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { selectedEnv, environments } from '$lib/stores/environment';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import { toasts } from '$lib/stores/toast';
 	import { formatPorts, truncateId, formatDate, formatDateTime, extractHealth } from '$lib/utils/format';
@@ -43,6 +44,7 @@
 		$environments.filter(e => e.id !== $selectedEnv).map(e => ({ value: e.id, label: e.name }))
 	);
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let sortKey = $state<string>('name');
 	let sortAsc = $state(true);
 
@@ -76,6 +78,8 @@
 	$effect(() => {
 		if (!$canSeePage('page.containers')) goto('/profile');
 	});
+
+	$effect(() => { if (tableEl && !loading && containers.length > 0) initResizableColumns(tableEl); });
 
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
@@ -451,7 +455,7 @@
 		<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin"></div></div>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full">
+			<table bind:this={tableEl} class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="w-10 px-4 py-2"></th>
 					{#if $canDoAction('action.container_start_stop') || $canDoAction('action.container_delete')}<th class="w-10 px-4 py-2"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}

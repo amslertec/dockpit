@@ -9,12 +9,14 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { VulnerabilityScan, VulnScanStatus } from '$lib/api/types';
 
 	$effect(() => {
 		if (!$canSeePage('page.vulnerabilities')) goto('/profile');
 	});
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let scans = $state<VulnerabilityScan[]>([]);
 	let loading = $state(true);
 	let scanning = $state(false);
@@ -39,6 +41,7 @@
 
 	onDestroy(() => { if (pollInterval) clearInterval(pollInterval); });
 	$effect(() => { $selectedEnv; loadScans(); checkStatus(); });
+	$effect(() => { if (tableEl && !loading && scans.length > 0) initResizableColumns(tableEl); });
 
 	async function checkStatus() {
 		if (!$selectedEnv) return;
@@ -229,7 +232,7 @@
 			</div>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table bind:this={tableEl} class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)]">
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('vuln.image')}</th>

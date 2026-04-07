@@ -9,12 +9,14 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import { formatDateTimeSmart } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { ContainerEvent, EventsResponse } from '$lib/api/types';
 
 	$effect(() => {
 		if (!$canSeePage('page.events')) goto('/profile');
 	});
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let events = $state<ContainerEvent[]>([]);
 	let loading = $state(true);
 	let total = $state(0);
@@ -55,6 +57,7 @@
 
 	$effect(() => { $selectedEnv; loadEvents(); });
 	$effect(() => { filter; page = 1; });
+	$effect(() => { if (tableEl && !loading && events.length > 0) initResizableColumns(tableEl); });
 
 	async function loadEvents() {
 		if (!$selectedEnv) return;
@@ -151,7 +154,7 @@
 			</div>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table bind:this={tableEl} class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)]">
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{$t('events.time')}</th>

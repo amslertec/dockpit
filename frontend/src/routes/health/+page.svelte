@@ -8,12 +8,14 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { ContainerHealth } from '$lib/api/types';
 
 	$effect(() => {
 		if (!$canSeePage('page.health')) goto('/profile');
 	});
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let containers = $state<ContainerHealth[]>([]);
 	let loading = $state(true);
 	let page = $state(1);
@@ -47,6 +49,8 @@
 	});
 
 	$effect(() => { $selectedEnv; loadHealth(); });
+
+	$effect(() => { if (tableEl && !loading && containers.length > 0) initResizableColumns(tableEl); });
 
 	async function loadHealth() {
 		if (!$selectedEnv) return;
@@ -170,7 +174,7 @@
 			</div>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
+				<table bind:this={tableEl} class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-[var(--border)]">
 							<th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('name')}>{$t('events.container')}{sortIndicator('name')}</th>

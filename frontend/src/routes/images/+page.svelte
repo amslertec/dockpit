@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { selectedEnv } from '$lib/stores/environment';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import { toasts } from '$lib/stores/toast';
 	import { truncateId, formatSize, formatDate } from '$lib/utils/format';
 	import Modal from '$lib/components/ui/Modal.svelte';
@@ -17,6 +18,7 @@
 
 	let images = $state<ImageInfo[]>([]);
 	let loading = $state(true);
+	let tableEl: HTMLTableElement | undefined = $state();
 	let showPull = $state(false);
 	let pullName = $state('');
 	let searchResults = $state<{name: string; description: string; is_official: boolean; star_count: number}[]>([]);
@@ -163,6 +165,8 @@
 		if (!$canSeePage('page.images')) goto('/profile');
 	});
 
+	$effect(() => { if (tableEl && !loading && images.length > 0) initResizableColumns(tableEl); });
+
 	onMount(() => load());
 	$effect(() => { $selectedEnv; load(); });
 	$effect(() => { search; filter; page = 1; });
@@ -281,7 +285,7 @@
 		<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin"></div></div>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full">
+			<table bind:this={tableEl} class="w-full">
 				<thead><tr class="border-b border-theme">
 					{#if $canDoAction('action.image_pull_delete')}<th class="w-10 px-4 py-2.5"><CustomCheckbox checked={allSelected} onchange={toggleAll} size="sm" /></th>{/if}
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('in_use')}>{$t('common.status')}{sortIndicator('in_use')}</th>

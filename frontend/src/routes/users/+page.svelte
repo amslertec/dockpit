@@ -13,13 +13,17 @@
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 
 	$effect(() => {
 		if (!$canDoAction('action.user_management')) goto('/profile');
 	});
 
+	$effect(() => { if (usersTableEl && users.length > 0) initResizableColumns(usersTableEl); });
+
 	let activeTab = $state(0);
 	let loading = $state(true);
+	let usersTableEl: HTMLTableElement | undefined = $state();
 
 	// Users
 	let users = $state<any[]>([]);
@@ -352,7 +356,7 @@
 				</div>
 
 				<div class="overflow-x-auto">
-					<table class="w-full">
+					<table bind:this={usersTableEl} class="w-full">
 						<thead><tr class="border-b border-theme">
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('login.username')}</th>
 							<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('users.role')}</th>

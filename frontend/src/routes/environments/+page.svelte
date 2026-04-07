@@ -16,6 +16,7 @@
 	import type { EnvironmentInfo, RegistryInfo, ScheduledJob } from '$lib/api/types';
 	import CustomSelect from '$lib/components/ui/CustomSelect.svelte';
 	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 
 	$effect(() => {
 		if (!$canSeePage('page.environments')) goto('/profile');
@@ -24,6 +25,14 @@
 	let activeTab = $state(0);
 	let loading = $state(true);
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
+
+	let serversTableEl: HTMLTableElement | undefined = $state();
+	let registriesTableEl: HTMLTableElement | undefined = $state();
+	let jobsTableEl: HTMLTableElement | undefined = $state();
+
+	$effect(() => { if (serversTableEl && $environments.length > 0) initResizableColumns(serversTableEl); });
+	$effect(() => { if (registriesTableEl && registries.length > 0) initResizableColumns(registriesTableEl); });
+	$effect(() => { if (jobsTableEl && jobs.length > 0) initResizableColumns(jobsTableEl); });
 
 	// Edit modal
 	let editEnv = $state<EnvironmentInfo | null>(null);
@@ -252,7 +261,7 @@
 					<div class="flex justify-center py-12"><div class="w-5 h-5 border-2 border-theme border-t-[var(--accent)] rounded-full animate-spin"></div></div>
 				{:else}
 					<div class="overflow-x-auto">
-						<table class="w-full">
+						<table bind:this={serversTableEl} class="w-full">
 							<thead><tr class="border-b border-theme">
 								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.name')}</th>
 								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('env.address')}</th>
@@ -408,7 +417,7 @@
 
 					{#if registries.length > 0}
 						<div class="overflow-x-auto mb-5">
-							<table class="w-full">
+							<table bind:this={registriesTableEl} class="w-full">
 								<thead><tr class="border-b border-theme">
 									<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('env.registry')}</th>
 									<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('login.username')}</th>
@@ -483,7 +492,7 @@
 					</div>
 				{:else}
 					<div class="overflow-x-auto">
-						<table class="w-full">
+						<table bind:this={jobsTableEl} class="w-full">
 							<thead><tr class="border-b border-theme">
 								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('updates.server')}</th>
 								<th class="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('jobs.type')}</th>

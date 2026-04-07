@@ -9,6 +9,7 @@
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { formatDateTime } from '$lib/utils/format';
+	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { UpdateCheckResult } from '$lib/api/types';
 
 	interface CheckStatus { running: boolean; total_checked: number; total_outdated: number; last_check?: string; }
@@ -17,6 +18,7 @@
 		if (!$canSeePage('page.updates')) goto('/profile');
 	});
 
+	let tableEl: HTMLTableElement | undefined = $state();
 	let results = $state<UpdateCheckResult[]>([]);
 	let status = $state<CheckStatus>({ running: false, total_checked: 0, total_outdated: 0 });
 	let loading = $state(true);
@@ -28,6 +30,8 @@
 
 	const filtered = $derived(results.filter(r => { if (filter === 'outdated') return r.outdated; if (filter === 'current') return !r.outdated; return true; }));
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
+
+	$effect(() => { if (tableEl && !loading && results.length > 0) initResizableColumns(tableEl); });
 
 	onMount(() => { loadAll(); startPolling(); });
 	onDestroy(() => stopPolling());
@@ -171,7 +175,7 @@
 		</div>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full">
+			<table bind:this={tableEl} class="w-full">
 				<thead><tr class="border-b border-theme">
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('containers.title')}</th>
