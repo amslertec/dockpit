@@ -262,7 +262,7 @@
 					{#each [...new Set(nodes.filter(n => n.stack).map(n => n.stack))] as stackName}
 						{@const stackNodes = nodes.filter(n => n.stack === stackName)}
 						{#if stackNodes.length > 0}
-							{@const minY = Math.min(...stackNodes.map(n => n.y)) - 30}
+							{@const minY = Math.min(...stackNodes.map(n => n.y)) - 35}
 							{@const maxY = Math.max(...stackNodes.map(n => n.y)) + 30}
 							<rect
 								x={width / 2 - 120} y={minY}
@@ -270,7 +270,7 @@
 								rx="12" fill="var(--accent)" opacity="0.05"
 								stroke="var(--accent)" stroke-width="1" stroke-dasharray="4,4"
 							/>
-							<text x={width / 2} y={minY + 14} text-anchor="middle" fill="var(--accent)" font-size="10" font-weight="600" opacity="0.6">
+							<text x={width / 2} y={minY - 8} text-anchor="middle" fill="var(--accent)" font-size="10" font-weight="600" opacity="0.7">
 								{stackName}
 							</text>
 						{/if}

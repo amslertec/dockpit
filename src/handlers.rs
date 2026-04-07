@@ -1177,17 +1177,17 @@ pub async fn run_update_check(
         let outdated_count = results.iter().filter(|r| r.outdated).count();
         if outdated_count > 0 {
             let names: Vec<_> = results.iter().filter(|r| r.outdated).take(5).map(|r| r.container_name.clone()).collect();
-            state_clone.db.create_notification(
+            notify_and_email(&state_clone,
                 "update_available",
                 &format!("{} updates available", outdated_count),
                 &format!("{} of {} containers have updates: {}", outdated_count, total, names.join(", ")),
-            ).ok();
+            );
         } else {
-            state_clone.db.create_notification(
+            notify_and_email(&state_clone,
                 "update_current",
                 "All containers up to date",
                 &format!("{} containers checked, all current", total),
-            ).ok();
+            );
         }
 
         // Send webhook notification if configured
@@ -1980,17 +1980,17 @@ pub async fn evaluate_alert_rules(state: Arc<AppState>) {
                         tokio::process::Command::new("docker").args(["start", cid]).output().await.ok();
                         tracing::info!("Auto-fix: Started container {} (rule: {})", container_name.as_deref().unwrap_or("?"), name);
                         state.db.mark_alert_triggered(*id);
-                        state.db.create_notification("alert_autofix", &format!("Auto-Fix: {}", name), &format!("Container {} automatisch gestartet", container_name.as_deref().unwrap_or("?"))).ok();
+                        notify_and_email(&state, "alert_autofix", &format!("Auto-Fix: {}", name), &format!("Container {} automatically restarted", container_name.as_deref().unwrap_or("?")));
                     }
                 }
                 "notify" => {
-                    state.db.create_notification("alert", &format!("Alert: {}", name), &format!("Event '{}' für Container {}", event_action, container_name.as_deref().unwrap_or("?"))).ok();
+                    notify_and_email(&state, "alert", &format!("Alert: {}", name), &format!("Event '{}' for container {}", event_action, container_name.as_deref().unwrap_or("?")));
                     state.db.mark_alert_triggered(*id);
                 }
                 "prune" => {
                     tokio::process::Command::new("docker").args(["system", "prune", "-f"]).output().await.ok();
                     state.db.mark_alert_triggered(*id);
-                    state.db.create_notification("alert_autofix", &format!("Auto-Fix: {}", name), "Docker System Prune ausgeführt").ok();
+                    notify_and_email(&state, "alert_autofix", &format!("Auto-Fix: {}", name), "Docker System Prune executed");
                 }
                 _ => {}
             }
@@ -2917,11 +2917,9 @@ pub async fn env_check_status(
     let status = match client.get(&url).send().await {
         Ok(r) if r.status().is_success() => "online",
         _ => {
-            state.db.create_notification(
-                "connection_error",
+            notify_and_email(&state, "connection_error",
                 &format!("Server offline: {}", env.name),
-                &format!("Cannot reach agent at {}", env.url),
-            ).ok();
+                &format!("Cannot reach agent at {}", env.url));
             "offline"
         }
     };
@@ -3534,11 +3532,11 @@ pub async fn env_scan_vulnerabilities(
         }
 
         state_clone.vuln_scan_running.store(false, Ordering::SeqCst);
-        state_clone.db.create_notification(
+        notify_and_email(&state_clone,
             "scan_complete",
             "Vulnerability scan complete",
             &format!("{} images scanned", unique_images.len()),
-        ).ok();
+        );
     });
 
     Json(ApiResponse::ok("Scan started".into()))
@@ -3983,7 +3981,7 @@ pub async fn execute_job(state: Arc<AppState>, job: ScheduledJob) {
     let env_name = state.db.get_environment(&job.env_id).map(|e| e.name).unwrap_or_default();
     let title = format!("{}: {}", job.job_type.replace('_', " "), env_name);
     let ntype = if result == "success" { "job_success" } else { "job_error" };
-    state.db.create_notification(ntype, &title, &message).ok();
+    notify_and_email(&state, ntype, &title, &message);
 
     tracing::info!("Scheduled job {} ({}) completed: {} - {}", job.id, job.job_type, result, message);
 }
@@ -4206,7 +4204,7 @@ pub async fn create_backup(
             let retention: usize = state.db.get_setting("backup_retention")
                 .and_then(|v| v.parse().ok()).unwrap_or(7);
             enforce_retention(&dir, retention);
-            state.db.create_notification("backup_success", "Backup created", &filename).ok();
+            notify_and_email(&state, "backup_success", "Backup created", &filename);
             state.db.log_audit(&audit_user(&headers), "backup_create", Some(&filename), None);
             Json(ApiResponse::ok(BackupInfo {
                 filename, size_bytes: size, created_at: now.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
@@ -4372,12 +4370,12 @@ pub async fn check_scheduled_backup(state: Arc<AppState>) {
                 .and_then(|v| v.parse().ok()).unwrap_or(7);
             enforce_retention(&dir, retention);
             state.db.set_setting("backup_last_run", &today).ok();
-            state.db.create_notification("backup_success", "Scheduled backup created", &filename).ok();
+            notify_and_email(&state, "backup_success", "Scheduled backup created", &filename);
             state.db.log_audit("system", "backup_scheduled", Some(&filename), None);
             tracing::info!("Scheduled backup created: {}", filename);
         }
         Err(e) => {
-            state.db.create_notification("backup_failed", "Scheduled backup failed", &e).ok();
+            notify_and_email(&state, "backup_failed", "Scheduled backup failed", &e);
             tracing::error!("Scheduled backup failed: {}", e);
         }
     }
