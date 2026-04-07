@@ -17,6 +17,7 @@ export const en: Record<string, string> = {
 	'nav.profile': 'Profile',
 	'nav.logout': 'Logout',
 	'nav.hostTerminal': 'Host Terminal',
+	'nav.dependencies': 'Dependencies',
 
 	// === Topbar ===
 	'topbar.menu': 'Menu',

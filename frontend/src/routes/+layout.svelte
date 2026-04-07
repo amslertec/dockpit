@@ -51,7 +51,8 @@
 		'/audit': 'audit.title',
 		'/health': 'health.title',
 		'/profile': 'nav.profile',
-		'/host-terminal': 'hostTerminal.title'
+		'/host-terminal': 'hostTerminal.title',
+		'/dependencies': 'nav.dependencies'
 	};
 	const pageTitle = $derived(titleKeys[$page.url.pathname] ? $t(titleKeys[$page.url.pathname]) : 'DockPit');
 

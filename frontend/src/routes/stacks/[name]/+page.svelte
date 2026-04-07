@@ -34,6 +34,22 @@
 	let recreateModal = $state<{ name: string; image: string; steps: RecreateStep[]; output: string; done: boolean } | null>(null);
 	let updateStatus = $state<Map<string, 'checking' | 'up-to-date' | 'outdated'>>(new Map());
 
+	let editorMode = $state<'yaml' | 'visual'>('yaml');
+
+	interface ServiceConfig {
+		name: string;
+		image: string;
+		ports: string[];
+		volumes: string[];
+		environment: string[];
+		restart: string;
+		labels: string[];
+		command: string;
+		networks: string[];
+	}
+
+	let services = $state<ServiceConfig[]>([]);
+
 	function isChecking(id: string) { return updateStatus.get(id) === 'checking'; }
 	function getStatus(id: string) { return updateStatus.get(id); }
 
@@ -260,6 +276,82 @@
 			else toasts.error(r.error || $t('common.error'));
 		}};
 	}
+
+	function parseYamlToServices() {
+		try {
+			const doc = YAML.parse(tabs[0].content);
+			if (!doc?.services) { services = []; return; }
+			services = Object.entries(doc.services).map(([name, svc]: [string, any]) => ({
+				name,
+				image: svc.image || '',
+				ports: Array.isArray(svc.ports) ? svc.ports.map(String) : [],
+				volumes: Array.isArray(svc.volumes) ? svc.volumes.map(String) : [],
+				environment: Array.isArray(svc.environment) ? svc.environment.map(String) : Object.entries(svc.environment || {}).map(([k, v]) => `${k}=${v}`),
+				restart: svc.restart || '',
+				labels: Array.isArray(svc.labels) ? svc.labels.map(String) : Object.entries(svc.labels || {}).map(([k, v]) => `${k}=${v}`),
+				command: typeof svc.command === 'string' ? svc.command : Array.isArray(svc.command) ? svc.command.join(' ') : '',
+				networks: Array.isArray(svc.networks) ? svc.networks.map(String) : Object.keys(svc.networks || {}),
+			}));
+		} catch { services = []; }
+	}
+
+	function servicesToYaml() {
+		const doc: any = { services: {} };
+		for (const svc of services) {
+			const s: any = {};
+			if (svc.image) s.image = svc.image;
+			if (svc.restart) s.restart = svc.restart;
+			if (svc.command) s.command = svc.command;
+			if (svc.ports.length > 0) s.ports = svc.ports.filter(p => p.trim());
+			if (svc.volumes.length > 0) s.volumes = svc.volumes.filter(v => v.trim());
+			if (svc.environment.length > 0) s.environment = svc.environment.filter(e => e.trim());
+			if (svc.labels.length > 0) s.labels = svc.labels.filter(l => l.trim());
+			if (svc.networks.length > 0) s.networks = svc.networks.filter(n => n.trim());
+			doc.services[svc.name] = s;
+		}
+		// Preserve volumes/networks sections from original
+		try {
+			const orig = YAML.parse(tabs[0].content);
+			if (orig?.volumes) doc.volumes = orig.volumes;
+			if (orig?.networks) doc.networks = orig.networks;
+		} catch {}
+		tabs[0].content = YAML.stringify(doc, { indent: 2 });
+	}
+
+	function addService() {
+		services = [...services, { name: `service-${services.length + 1}`, image: '', ports: [], volumes: [], environment: [], restart: 'unless-stopped', labels: [], command: '', networks: [] }];
+	}
+
+	function removeService(idx: number) {
+		services = services.filter((_, i) => i !== idx);
+		servicesToYaml();
+	}
+
+	function addField(svcIdx: number, field: 'ports' | 'volumes' | 'environment' | 'labels' | 'networks') {
+		services[svcIdx][field] = [...services[svcIdx][field], ''];
+		services = [...services];
+	}
+
+	function removeField(svcIdx: number, field: 'ports' | 'volumes' | 'environment' | 'labels' | 'networks', fieldIdx: number) {
+		services[svcIdx][field] = services[svcIdx][field].filter((_, i) => i !== fieldIdx);
+		services = [...services];
+		servicesToYaml();
+	}
+
+	function updateField(svcIdx: number, field: 'ports' | 'volumes' | 'environment' | 'labels' | 'networks', fieldIdx: number, value: string) {
+		services[svcIdx][field][fieldIdx] = value;
+		services = [...services];
+	}
+
+	function switchToVisual() {
+		parseYamlToServices();
+		editorMode = 'visual';
+	}
+
+	function switchToYaml() {
+		servicesToYaml();
+		editorMode = 'yaml';
+	}
 </script>
 
 <svelte:head><title>DockPit — Stack: {stackName}</title></svelte:head>
@@ -405,35 +497,150 @@
 	{#if showEditor}
 		<div class="bg-card border border-theme rounded-lg overflow-hidden mb-4">
 			<div class="px-4 py-3 border-b border-theme flex items-center justify-between">
-				<h3 class="text-sm font-semibold text-primary">{$t('stacks.files')}</h3>
-				<Button variant="primary" size="sm" onclick={save} loading={saving}>{$t('common.save')}</Button>
+				<div class="flex items-center gap-3">
+					<h3 class="text-sm font-semibold text-primary">{$t('stacks.files')}</h3>
+					<div class="flex items-center bg-[var(--bg-0)] rounded-md border border-theme">
+						<button class="px-2.5 py-1 text-[11px] rounded-md transition {editorMode === 'yaml' ? 'bg-accent text-white font-medium' : 'text-secondary hover:text-primary'}" onclick={() => switchToYaml()}>YAML</button>
+						<button class="px-2.5 py-1 text-[11px] rounded-md transition {editorMode === 'visual' ? 'bg-accent text-white font-medium' : 'text-secondary hover:text-primary'}" onclick={() => switchToVisual()}>Visual</button>
+					</div>
+				</div>
+				<Button variant="primary" size="sm" onclick={() => { if (editorMode === 'visual') servicesToYaml(); save(); }} loading={saving}>{$t('common.save')}</Button>
 			</div>
-			<div class="flex items-center border-b border-theme overflow-x-auto bg-1">
-				{#each tabs as tab, i}
-					<button class="flex items-center gap-1 px-3 py-2 text-[11px] font-medium whitespace-nowrap border-b-2 transition
-						{activeTab === i ? 'border-[var(--accent)] text-accent' : 'border-transparent text-secondary hover:text-primary'}"
-						onclick={() => activeTab = i}>
-						{tab.name}
-						{#if tab.removable}
-							<span class="ml-1 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-light hover:text-red text-muted cursor-pointer"
-								onclick={(e: MouseEvent) => { e.stopPropagation(); removeTab(i); }} role="button" tabindex="-1">
-								<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</span>
-						{/if}
+			{#if editorMode === 'yaml'}
+				<div class="flex items-center border-b border-theme overflow-x-auto bg-1">
+					{#each tabs as tab, i}
+						<button class="flex items-center gap-1 px-3 py-2 text-[11px] font-medium whitespace-nowrap border-b-2 transition
+							{activeTab === i ? 'border-[var(--accent)] text-accent' : 'border-transparent text-secondary hover:text-primary'}"
+							onclick={() => activeTab = i}>
+							{tab.name}
+							{#if tab.removable}
+								<span class="ml-1 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-light hover:text-red text-muted cursor-pointer"
+									onclick={(e: MouseEvent) => { e.stopPropagation(); removeTab(i); }} role="button" tabindex="-1">
+									<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								</span>
+							{/if}
+						</button>
+					{/each}
+					<button onclick={addFile} class="px-2 py-2 text-[11px] text-muted hover:text-accent transition" title={$t('stacks.addFile')}>
+						<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 					</button>
-				{/each}
-				<button onclick={addFile} class="px-2 py-2 text-[11px] text-muted hover:text-accent transition" title={$t('stacks.addFile')}>
-					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-				</button>
-			</div>
-			{#if activeTab === 0 && yamlError}
-				<div class="px-3 py-1.5 bg-red-light text-red text-[11px] border-b border-theme">YAML: {yamlError}</div>
+				</div>
+				{#if activeTab === 0 && yamlError}
+					<div class="px-3 py-1.5 bg-red-light text-red text-[11px] border-b border-theme">YAML: {yamlError}</div>
+				{/if}
+				<textarea bind:value={tabs[activeTab].content} oninput={onInput} spellcheck={false}
+					class="w-full h-[400px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border-none"></textarea>
+				<div class="px-3 py-1.5 border-t border-theme flex items-center justify-between text-[10px] text-muted">
+					<span>{tabs[activeTab].name}</span><span>{tabs[activeTab].content.split('\n').length} {$t('stacks.lines')}</span>
+				</div>
+			{:else}
+				<!-- Visual editor -->
+				<div class="p-4 space-y-4 max-h-[500px] overflow-y-auto">
+					{#each services as svc, svcIdx}
+						<div class="bg-[var(--bg-0)] border border-theme rounded-lg p-4">
+							<div class="flex items-center justify-between mb-3">
+								<div class="flex items-center gap-2">
+									<span class="w-2 h-2 rounded-full bg-[var(--accent)]"></span>
+									<input class="text-sm font-semibold text-primary bg-transparent border-none outline-none w-[200px]" bind:value={svc.name} onblur={() => servicesToYaml()} />
+								</div>
+								<button class="text-[var(--red)] hover:bg-[var(--red)]/8 w-6 h-6 rounded flex items-center justify-center transition" onclick={() => removeService(svcIdx)} title="Remove">
+									<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								</button>
+							</div>
+
+							<div class="grid grid-cols-2 gap-3 mb-3">
+								<div>
+									<label class="block text-[10px] font-medium text-muted mb-1">Image</label>
+									<input class="w-full h-8 px-2 text-xs bg-card border border-theme rounded-md text-primary focus:border-[var(--accent)] focus:outline-none" bind:value={svc.image} onblur={() => servicesToYaml()} />
+								</div>
+								<div>
+									<label class="block text-[10px] font-medium text-muted mb-1">Restart</label>
+									<select class="w-full h-8 px-2 text-xs bg-card border border-theme rounded-md text-primary focus:border-[var(--accent)] focus:outline-none appearance-none" bind:value={svc.restart} onchange={() => servicesToYaml()}>
+										<option value="">none</option>
+										<option value="always">always</option>
+										<option value="unless-stopped">unless-stopped</option>
+										<option value="on-failure">on-failure</option>
+									</select>
+								</div>
+							</div>
+
+							<div class="mb-3">
+								<label class="block text-[10px] font-medium text-muted mb-1">Command</label>
+								<input class="w-full h-8 px-2 text-xs font-mono bg-card border border-theme rounded-md text-primary focus:border-[var(--accent)] focus:outline-none" bind:value={svc.command} onblur={() => servicesToYaml()} placeholder="optional" />
+							</div>
+
+							<!-- Ports -->
+							<div class="mb-3">
+								<div class="flex items-center justify-between mb-1">
+									<label class="text-[10px] font-medium text-muted">Ports</label>
+									<button class="text-[10px] text-accent hover:underline" onclick={() => addField(svcIdx, 'ports')}>+ Add</button>
+								</div>
+								{#each svc.ports as port, pIdx}
+									<div class="flex items-center gap-1 mb-1">
+										<input class="flex-1 h-7 px-2 text-[11px] font-mono bg-card border border-theme rounded text-primary focus:border-[var(--accent)] focus:outline-none" value={port} oninput={(e) => { updateField(svcIdx, 'ports', pIdx, (e.target as HTMLInputElement).value); }} onblur={() => servicesToYaml()} placeholder="8080:80" />
+										<button class="text-muted hover:text-[var(--red)] w-5 h-5 flex items-center justify-center" onclick={() => removeField(svcIdx, 'ports', pIdx)}>
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									</div>
+								{/each}
+							</div>
+
+							<!-- Volumes -->
+							<div class="mb-3">
+								<div class="flex items-center justify-between mb-1">
+									<label class="text-[10px] font-medium text-muted">Volumes</label>
+									<button class="text-[10px] text-accent hover:underline" onclick={() => addField(svcIdx, 'volumes')}>+ Add</button>
+								</div>
+								{#each svc.volumes as vol, vIdx}
+									<div class="flex items-center gap-1 mb-1">
+										<input class="flex-1 h-7 px-2 text-[11px] font-mono bg-card border border-theme rounded text-primary focus:border-[var(--accent)] focus:outline-none" value={vol} oninput={(e) => { updateField(svcIdx, 'volumes', vIdx, (e.target as HTMLInputElement).value); }} onblur={() => servicesToYaml()} placeholder="data:/app/data" />
+										<button class="text-muted hover:text-[var(--red)] w-5 h-5 flex items-center justify-center" onclick={() => removeField(svcIdx, 'volumes', vIdx)}>
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									</div>
+								{/each}
+							</div>
+
+							<!-- Environment -->
+							<div class="mb-3">
+								<div class="flex items-center justify-between mb-1">
+									<label class="text-[10px] font-medium text-muted">Environment</label>
+									<button class="text-[10px] text-accent hover:underline" onclick={() => addField(svcIdx, 'environment')}>+ Add</button>
+								</div>
+								{#each svc.environment as env, eIdx}
+									<div class="flex items-center gap-1 mb-1">
+										<input class="flex-1 h-7 px-2 text-[11px] font-mono bg-card border border-theme rounded text-primary focus:border-[var(--accent)] focus:outline-none" value={env} oninput={(e) => { updateField(svcIdx, 'environment', eIdx, (e.target as HTMLInputElement).value); }} onblur={() => servicesToYaml()} placeholder="KEY=value" />
+										<button class="text-muted hover:text-[var(--red)] w-5 h-5 flex items-center justify-center" onclick={() => removeField(svcIdx, 'environment', eIdx)}>
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									</div>
+								{/each}
+							</div>
+
+							<!-- Networks -->
+							<div>
+								<div class="flex items-center justify-between mb-1">
+									<label class="text-[10px] font-medium text-muted">Networks</label>
+									<button class="text-[10px] text-accent hover:underline" onclick={() => addField(svcIdx, 'networks')}>+ Add</button>
+								</div>
+								{#each svc.networks as net, nIdx}
+									<div class="flex items-center gap-1 mb-1">
+										<input class="flex-1 h-7 px-2 text-[11px] font-mono bg-card border border-theme rounded text-primary focus:border-[var(--accent)] focus:outline-none" value={net} oninput={(e) => { updateField(svcIdx, 'networks', nIdx, (e.target as HTMLInputElement).value); }} onblur={() => servicesToYaml()} placeholder="network-name" />
+										<button class="text-muted hover:text-[var(--red)] w-5 h-5 flex items-center justify-center" onclick={() => removeField(svcIdx, 'networks', nIdx)}>
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/each}
+
+					<button class="w-full py-3 border-2 border-dashed border-theme rounded-lg text-xs text-muted hover:text-accent hover:border-[var(--accent)] transition" onclick={addService}>
+						<svg class="w-4 h-4 inline-block mr-1 -mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+						Add Service
+					</button>
+				</div>
 			{/if}
-			<textarea bind:value={tabs[activeTab].content} oninput={onInput} spellcheck={false}
-				class="w-full h-[400px] bg-0 text-primary font-mono text-[12px] leading-relaxed p-3 resize-none focus:outline-none border-none"></textarea>
-			<div class="px-3 py-1.5 border-t border-theme flex items-center justify-between text-[10px] text-muted">
-				<span>{tabs[activeTab].name}</span><span>{tabs[activeTab].content.split('\n').length} {$t('stacks.lines')}</span>
-			</div>
 		</div>
 	{/if}
 
