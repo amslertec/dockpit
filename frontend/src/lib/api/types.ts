@@ -38,6 +38,7 @@ export interface ImageInfo {
 	size: number;
 	created: number;
 	in_use: boolean;
+	used_by?: string[];
 }
 
 export interface VolumeInfo {

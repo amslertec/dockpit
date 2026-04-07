@@ -199,6 +199,7 @@ export const de: Record<string, string> = {
 	'images.noImages': 'Keine Images',
 	'images.repoTag': 'Repository / Tag',
 	'images.size': 'Grösse',
+	'images.usedBy': 'Verwendet von',
 	'images.created': 'Erstellt',
 
 	// === Volumes ===

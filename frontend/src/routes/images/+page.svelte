@@ -288,6 +288,7 @@
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('tags')}>{$t('images.repoTag')}{sortIndicator('tags')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('id')}>ID{sortIndicator('id')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('size')}>{$t('images.size')}{sortIndicator('size')}</th>
+					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden lg:table-cell">{$t('images.usedBy')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell cursor-pointer hover:text-[var(--text)]" onclick={() => toggleSort('created')}>{$t('images.created')}{sortIndicator('created')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.actions')}</th>
 				</tr></thead>
@@ -313,6 +314,17 @@
 							<td class="px-4 py-3 text-sm text-primary">{img.tags.length ? img.tags.join(', ') : '<none>'}</td>
 							<td class="px-4 py-3 text-[11px] font-mono text-secondary">{truncateId(img.id)}</td>
 							<td class="px-4 py-3 text-xs text-secondary">{formatSize(img.size)}</td>
+							<td class="px-4 py-3 hidden lg:table-cell">
+								{#if img.used_by && img.used_by.length > 0}
+									<div class="flex flex-wrap gap-1">
+										{#each img.used_by as name}
+											<span class="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--accent-bg)] text-accent border border-[var(--accent)]/20">{name}</span>
+										{/each}
+									</div>
+								{:else}
+									<span class="text-[10px] text-muted">—</span>
+								{/if}
+							</td>
 							<td class="px-4 py-3 text-xs text-secondary hidden md:table-cell">{formatDate(img.created)}</td>
 							{#if $canDoAction('action.image_pull_delete')}
 							<td class="px-4 py-3">

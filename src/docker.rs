@@ -437,6 +437,22 @@ impl DockerClient {
             all: true, ..Default::default()
         }))).await.unwrap_or_default();
 
+        // Map image ID → list of container names using it
+        let mut image_users: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        for c in &containers {
+            if let Some(ref img_id) = c.image_id {
+                let name = c.names.as_ref()
+                    .and_then(|n| n.first())
+                    .map(|n| n.trim_start_matches('/').to_string())
+                    .unwrap_or_default();
+                let stack = c.labels.as_ref()
+                    .and_then(|l| l.get("com.docker.compose.project"))
+                    .cloned();
+                let label = if let Some(s) = stack { format!("{} ({})", name, s) } else { name };
+                image_users.entry(img_id.clone()).or_default().push(label);
+            }
+        }
+
         let used_ids: std::collections::HashSet<String> = containers.iter()
             .filter_map(|c| c.image_id.clone())
             .collect();
@@ -447,6 +463,7 @@ impl DockerClient {
                 let tags = img.repo_tags;
                 let size_mb = img.size as f64 / 1_000_000.0;
                 let in_use = used_ids.contains(&img.id);
+                let used_by = image_users.get(&img.id).cloned().unwrap_or_default();
 
                 ImageInfo {
                     id: img.id[..std::cmp::min(19, img.id.len())].to_string(),
@@ -454,6 +471,7 @@ impl DockerClient {
                     size: size_mb,
                     created: img.created,
                     in_use,
+                    used_by,
                 }
             })
             .collect())

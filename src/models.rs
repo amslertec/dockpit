@@ -84,6 +84,7 @@ pub struct ImageInfo {
     pub size: f64,
     pub created: i64,
     pub in_use: bool,
+    pub used_by: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

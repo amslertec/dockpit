@@ -77,6 +77,7 @@ struct ImageInfo {
     size: f64,
     created: i64,
     in_use: bool,
+    used_by: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -280,10 +281,19 @@ async fn list_images(
 
     let options = ListImagesOptions::<String> { all: false, ..Default::default() };
 
-    // Get used image IDs
+    // Get used image IDs and container names
     use bollard::container::ListContainersOptions as LCO;
     let containers = state.docker.list_containers(Some(LCO::<&str> { all: true, ..Default::default() })).await.unwrap_or_default();
     let used_ids: std::collections::HashSet<String> = containers.iter().filter_map(|c| c.image_id.clone()).collect();
+    let mut image_users: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for c in &containers {
+        if let Some(ref img_id) = c.image_id {
+            let name = c.names.as_ref().and_then(|n| n.first()).map(|n| n.trim_start_matches('/').to_string()).unwrap_or_default();
+            let stack = c.labels.as_ref().and_then(|l| l.get("com.docker.compose.project")).cloned();
+            let label = if let Some(s) = stack { format!("{} ({})", name, s) } else { name };
+            image_users.entry(img_id.clone()).or_default().push(label);
+        }
+    }
 
     match state.docker.list_images(Some(options)).await {
         Ok(images) => {
@@ -291,12 +301,14 @@ async fn list_images(
                 .into_iter()
                 .map(|img| {
                     let in_use = used_ids.contains(&img.id);
+                    let used_by = image_users.get(&img.id).cloned().unwrap_or_default();
                     ImageInfo {
                         id: img.id[..std::cmp::min(19, img.id.len())].to_string(),
                         tags: img.repo_tags,
                         size: img.size as f64 / 1_000_000.0,
                         created: img.created,
                         in_use,
+                        used_by,
                     }
                 })
                 .collect();
