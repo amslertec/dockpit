@@ -1440,11 +1440,8 @@ async fn agent_scan_vulnerability(
     let image = req.image.unwrap_or_default();
     if image.is_empty() { return Ok(Json(ApiResponse::err("No image specified"))); }
 
-    let output = tokio::process::Command::new("docker")
-        .args(["run", "--rm",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-            "aquasec/trivy:latest",
-            "image", "--format", "sarif", "--quiet", &image])
+    let output = tokio::process::Command::new("trivy")
+        .args(["image", "--format", "sarif", "--quiet", &image])
         .output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if !output.status.success() {

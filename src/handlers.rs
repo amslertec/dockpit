@@ -3596,13 +3596,10 @@ pub async fn env_scan_single_image(
     }
 }
 
-/// Execute trivy image scan (SARIF format) — runs trivy via docker to avoid bundling Go binaries
+/// Execute trivy image scan (SARIF format)
 async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
-    let output = tokio::process::Command::new("docker")
-        .args(["run", "--rm",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-            "aquasec/trivy:latest",
-            "image", "--format", "sarif", "--quiet", image])
+    let output = tokio::process::Command::new("trivy")
+        .args(["image", "--format", "sarif", "--quiet", image])
         .output()
         .await
         .map_err(|e| format!("trivy not available: {}", e))?;
