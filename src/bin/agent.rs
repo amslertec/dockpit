@@ -1440,8 +1440,8 @@ async fn agent_scan_vulnerability(
     let image = req.image.unwrap_or_default();
     if image.is_empty() { return Ok(Json(ApiResponse::err("No image specified"))); }
 
-    let output = tokio::process::Command::new("docker")
-        .args(["scout", "cves", "--format", "sarif", &image])
+    let output = tokio::process::Command::new("trivy")
+        .args(["image", "--format", "sarif", "--quiet", &image])
         .output().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if !output.status.success() {
@@ -1469,7 +1469,13 @@ async fn agent_scan_vulnerability(
                 for result in results {
                     let rule_id = result.get("ruleId").and_then(|r| r.as_str()).unwrap_or("");
                     let rule = rules.get(rule_id);
-                    let sev = rule.and_then(|r| r.pointer("/properties/cvssV3_severity")).and_then(|s| s.as_str()).unwrap_or("unknown");
+                    let sev = result.get("level").and_then(|l| l.as_str())
+                        .map(|l| match l { "error" => "CRITICAL", "warning" => "HIGH", "note" => "MEDIUM", _ => "LOW" })
+                        .or_else(|| rule.and_then(|r| r.pointer("/properties/security-severity")).and_then(|s| s.as_str()).map(|s| {
+                            let score: f64 = s.parse().unwrap_or(0.0);
+                            if score >= 9.0 { "CRITICAL" } else if score >= 7.0 { "HIGH" } else if score >= 4.0 { "MEDIUM" } else { "LOW" }
+                        }))
+                        .unwrap_or("LOW");
                     match sev.to_uppercase().as_str() {
                         "CRITICAL" => critical += 1, "HIGH" => high += 1,
                         "MEDIUM" => medium += 1, _ => low += 1,

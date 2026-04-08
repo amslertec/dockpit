@@ -3596,25 +3596,22 @@ pub async fn env_scan_single_image(
     }
 }
 
-/// Execute docker scout cves on a local image (SARIF format)
+/// Execute trivy image scan (SARIF format)
 async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
-    let output = tokio::process::Command::new("docker")
-        .args(["scout", "cves", "--format", "sarif", image])
+    let output = tokio::process::Command::new("trivy")
+        .args(["image", "--format", "sarif", "--quiet", image])
         .output()
         .await
-        .map_err(|e| format!("docker scout not available: {}", e))?;
+        .map_err(|e| format!("trivy not available: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("authentication required") || stderr.contains("login") || stderr.contains("unauthorized") || stderr.contains("denied") {
-            return Err("Docker Hub login required. Please add Docker Hub credentials in Settings → Docker Login.".into());
-        }
         return Err(format!("Scan failed: {}", stderr.chars().take(200).collect::<String>()));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let sarif: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|_| "Failed to parse scout SARIF output".to_string())?;
+        .map_err(|_| "Failed to parse trivy SARIF output".to_string())?;
 
     let mut critical = 0i32;
     let mut high = 0i32;
@@ -3622,26 +3619,28 @@ async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
     let mut low = 0i32;
     let mut cves = Vec::new();
 
-    // Parse SARIF format: runs[0].tool.driver.rules has CVE details, runs[0].results has findings
     if let Some(runs) = sarif.get("runs").and_then(|r| r.as_array()) {
         if let Some(run) = runs.first() {
-            // Build rules lookup (CVE details)
             let rules: std::collections::HashMap<String, &serde_json::Value> = run
                 .pointer("/tool/driver/rules")
                 .and_then(|r| r.as_array())
                 .map(|arr| arr.iter().filter_map(|r| r.get("id").and_then(|id| id.as_str()).map(|id| (id.to_string(), r))).collect())
                 .unwrap_or_default();
 
-            // Parse results
             if let Some(results) = run.get("results").and_then(|r| r.as_array()) {
                 for result in results {
                     let rule_id = result.get("ruleId").and_then(|r| r.as_str()).unwrap_or("");
                     let rule = rules.get(rule_id);
 
-                    let severity = rule
-                        .and_then(|r| r.pointer("/properties/cvssV3_severity"))
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("unknown");
+                    // Trivy uses level in result or properties/precision in rule
+                    let severity = result.get("level").and_then(|l| l.as_str())
+                        .map(|l| match l { "error" => "CRITICAL", "warning" => "HIGH", "note" => "MEDIUM", _ => "LOW" })
+                        .or_else(|| rule.and_then(|r| r.pointer("/properties/cvssV3_severity")).and_then(|s| s.as_str()))
+                        .or_else(|| rule.and_then(|r| r.pointer("/properties/security-severity")).and_then(|s| s.as_str()).map(|s| {
+                            let score: f64 = s.parse().unwrap_or(0.0);
+                            if score >= 9.0 { "CRITICAL" } else if score >= 7.0 { "HIGH" } else if score >= 4.0 { "MEDIUM" } else { "LOW" }
+                        }))
+                        .unwrap_or("LOW");
 
                     match severity.to_uppercase().as_str() {
                         "CRITICAL" => critical += 1,
@@ -3651,7 +3650,6 @@ async fn scout_scan_image(image: &str) -> Result<VulnerabilityScan, String> {
                         _ => low += 1,
                     }
 
-                    // Extract package info from locations
                     let package = result.pointer("/locations/0/logicalLocations/0/fullyQualifiedName")
                         .and_then(|s| s.as_str()).unwrap_or("");
                     let description = rule
