@@ -56,10 +56,12 @@ COPY --from=docker-bins /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
-# Install Trivy vulnerability scanner
+# Install Trivy vulnerability scanner + pre-download DB
 ARG TRIVY_VERSION=0.69.3
 RUN curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
-    | tar xz -C /usr/local/bin trivy
+    | tar xz -C /usr/local/bin trivy \
+    && trivy filesystem --download-db-only --quiet /tmp \
+    && rm -rf /tmp/fanal
 
 COPY --from=builder /app/target/release/dockpit-server /usr/local/bin/dockpit-server
 
