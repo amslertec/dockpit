@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 ## Stage 2: Build Rust binary
-FROM docker.io/library/rust:bookworm AS builder
+FROM docker.io/library/rust:slim-trixie AS builder
 WORKDIR /app
 COPY Cargo.toml ./
 COPY src/ ./src/
@@ -15,7 +15,7 @@ COPY --from=frontend /app/frontend/build ./frontend/build/
 RUN cargo build --release --bin dockpit-server
 
 ## Stage 3: Docker CLI + patched Compose (fixes CVEs in Go dependencies)
-FROM docker.io/library/golang:1.25-alpine AS compose-builder
+FROM docker.io/library/golang:1.26-alpine AS compose-builder
 ARG COMPOSE_VERSION=v5.1.1
 RUN apk add --no-cache git curl \
     && git clone --depth 1 --branch ${COMPOSE_VERSION} https://github.com/docker/compose.git /src
@@ -38,7 +38,7 @@ RUN apk add --no-cache curl \
 COPY --from=compose-builder /usr/local/bin/docker-compose /usr/local/bin/docker-compose
 
 ## Stage 4: Runtime
-FROM docker.io/library/debian:bookworm-slim
+FROM docker.io/library/debian:trixie-slim
 
 LABEL org.opencontainers.image.title="DockPit" \
       org.opencontainers.image.description="Modern Docker container management tool" \
@@ -56,7 +56,7 @@ COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-pl
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
 # Install Docker Scout CLI plugin
-ARG SCOUT_VERSION=v1.20.3
+ARG SCOUT_VERSION=v1.20.4
 RUN curl -fsSL "https://github.com/docker/scout-cli/releases/download/${SCOUT_VERSION}/docker-scout_${SCOUT_VERSION#v}_linux_amd64.tar.gz" \
     | tar xz -C /usr/libexec/docker/cli-plugins docker-scout
 
