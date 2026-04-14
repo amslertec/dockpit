@@ -123,6 +123,40 @@ async fn restore_docker_logins(db: &Database) {
             Err(e) => tracing::warn!("Registry login error for {}: {}", registry, e),
         }
     }
+
+    // Propagate logins to all remote agents
+    let envs = db.get_environments();
+    let remote_envs: Vec<_> = envs.into_iter().filter(|e| !e.is_local).collect();
+    if remote_envs.is_empty() { return; }
+
+    tracing::info!("Propagating {} registry login(s) to {} remote agent(s)...", logins.len(), remote_envs.len());
+    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build() {
+        Ok(c) => c,
+        Err(e) => { tracing::warn!("Failed to create HTTP client: {}", e); return; }
+    };
+
+    for env in &remote_envs {
+        let token = env.agent_token.clone().unwrap_or_default();
+        for (registry, username, password) in &logins {
+            let url = format!("{}/api/docker/login", env.url);
+            let body = serde_json::json!({
+                "registry": registry,
+                "username": username,
+                "password": password,
+            });
+            match client.post(&url).header("X-Agent-Token", &token).json(&body).send().await {
+                Ok(r) if r.status().is_success() => {
+                    tracing::info!("Registry login '{}' propagated to agent '{}'", registry, env.name);
+                }
+                Ok(r) => {
+                    tracing::warn!("Agent '{}' rejected login for '{}': HTTP {}", env.name, registry, r.status());
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to reach agent '{}' for login '{}': {}", env.name, registry, e);
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
