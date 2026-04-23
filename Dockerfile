@@ -24,11 +24,12 @@ WORKDIR /src
 ENV GOTOOLCHAIN=auto
 RUN go get github.com/moby/buildkit@v0.28.1 \
     && go get google.golang.org/grpc@v1.79.3 \
-    && go get go.opentelemetry.io/otel/sdk@v1.40.0 \
-    && go get go.opentelemetry.io/otel@v1.40.0 \
-    && go get go.opentelemetry.io/otel/trace@v1.40.0 \
-    && go get go.opentelemetry.io/otel/metric@v1.40.0 \
+    && go get go.opentelemetry.io/otel/sdk@v1.43.0 \
+    && go get go.opentelemetry.io/otel@v1.43.0 \
+    && go get go.opentelemetry.io/otel/trace@v1.43.0 \
+    && go get go.opentelemetry.io/otel/metric@v1.43.0 \
     && go get github.com/sigstore/sigstore@v1.10.4 \
+    && go get github.com/docker/docker@v29.3.1+incompatible \
     && go mod tidy
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/docker-compose ./cmd
 
