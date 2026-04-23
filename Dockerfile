@@ -33,7 +33,7 @@ RUN go get github.com/moby/buildkit@v0.28.1 \
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/docker-compose ./cmd
 
 FROM docker.io/library/alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS docker-bins
-ARG DOCKER_VERSION=29.3.1
+ARG DOCKER_VERSION=29.4.1
 RUN apk add --no-cache curl \
     && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 COPY --from=compose-builder /usr/local/bin/docker-compose /usr/local/bin/docker-compose
@@ -57,7 +57,7 @@ COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-pl
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
 # Install Trivy vulnerability scanner + pre-download DB
-ARG TRIVY_VERSION=0.69.3
+ARG TRIVY_VERSION=0.70.0
 RUN curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
     | tar xz -C /usr/local/bin trivy \
     && trivy filesystem --download-db-only --quiet /tmp \
