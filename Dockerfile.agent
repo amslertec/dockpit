@@ -40,6 +40,7 @@ RUN apk add --no-cache git
 RUN git clone --depth 1 --branch ${TRIVY_VERSION} https://github.com/aquasecurity/trivy.git /src
 WORKDIR /src
 ENV GOTOOLCHAIN=auto
+ENV GOEXPERIMENT=jsonv2
 RUN go get github.com/docker/cli@v29.4.1+incompatible \
     && go get github.com/moby/buildkit@v0.28.1 \
     && go get github.com/go-jose/go-jose/v4@v4.1.4 \
@@ -51,7 +52,7 @@ RUN go get github.com/docker/cli@v29.4.1+incompatible \
     && go get go.opentelemetry.io/otel/metric@v1.43.0 \
     && go get google.golang.org/grpc@v1.79.3 \
     && go mod tidy
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/aquasecurity/trivy/pkg/version/app.ver=0.69.3" -o /usr/local/bin/trivy ./cmd/trivy
+RUN CGO_ENABLED=0 GOEXPERIMENT=jsonv2 go build -trimpath -ldflags="-s -w -X github.com/aquasecurity/trivy/pkg/version/app.ver=0.69.3" -o /usr/local/bin/trivy ./cmd/trivy
 
 ## Runtime
 FROM docker.io/library/debian:stable-slim@sha256:8f0c555de6a2f9c2bda1b170b67479d11f7f5e3b66bb4a7a1d8843361c9dd3ff
