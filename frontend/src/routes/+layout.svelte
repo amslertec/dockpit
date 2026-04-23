@@ -154,6 +154,44 @@
 		return () => { if (permInterval) clearInterval(permInterval); };
 	});
 
+	// Direct refresh — bypasses the 401-retry loop in client.ts so a failed refresh
+	// doesn't cause a cascading logout (we just silently retry later).
+	async function tryRefreshToken() {
+		const token = $auth.token || (typeof localStorage !== 'undefined' ? localStorage.getItem('dp_token') : null);
+		if (!token) return;
+		try {
+			const res = await fetch('/api/refresh', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+			});
+			if (!res.ok) return;
+			const data = await res.json();
+			if (data?.success && data?.data?.token) auth.setToken(data.data.token);
+		} catch {}
+	}
+
+	// Proactively refresh the 2h JWT well before it expires.
+	let refreshInterval: ReturnType<typeof setInterval> | undefined;
+	$effect(() => {
+		if ($auth.token && ready) {
+			if (refreshInterval) clearInterval(refreshInterval);
+			refreshInterval = setInterval(tryRefreshToken, 60 * 60 * 1000); // 1 hour
+		}
+		return () => { if (refreshInterval) clearInterval(refreshInterval); };
+	});
+
+	// Refresh when the tab becomes visible again — covers throttled/paused timers.
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		const handler = () => {
+			if (document.visibilityState === 'visible' && $auth.token && ready) {
+				tryRefreshToken();
+			}
+		};
+		document.addEventListener('visibilitychange', handler);
+		return () => document.removeEventListener('visibilitychange', handler);
+	});
+
 	// Reactive fallback: if environments weren't loaded yet (e.g. timing issue),
 	// try again whenever auth token becomes available
 	$effect(() => {

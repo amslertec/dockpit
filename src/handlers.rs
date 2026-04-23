@@ -335,9 +335,20 @@ pub async fn refresh_token(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Json<ApiResponse<LoginResponse>> {
-    let claims = match extract_claims(&headers) {
-        Some(c) => c,
+    // Grace window: accept tokens expired up to 7 days ago. Signature is still verified.
+    const REFRESH_GRACE_SECONDS: i64 = 7 * 24 * 60 * 60;
+
+    let header = match headers.get("Authorization").and_then(|v| v.to_str().ok()) {
+        Some(h) => h,
         None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    let token = match header.strip_prefix("Bearer ") {
+        Some(t) => t,
+        None => return Json(ApiResponse::err("Nicht autorisiert")),
+    };
+    let claims = match auth::validate_token_allow_expired(token, REFRESH_GRACE_SECONDS) {
+        Ok(c) => c,
+        Err(_) => return Json(ApiResponse::err("Nicht autorisiert")),
     };
     // Verify user still exists and get current role
     let role = match state.db.get_user_role(&claims.username) {

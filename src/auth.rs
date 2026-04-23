@@ -57,6 +57,31 @@ pub fn validate_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error
     Ok(token_data.claims)
 }
 
+/// Validates signature and claims but accepts tokens whose `exp` lies in the past,
+/// as long as it is not older than `max_age_expired_seconds` ago.
+/// Used by the refresh endpoint so a user who returns after a short absence
+/// can resume their session without re-login.
+pub fn validate_token_allow_expired(
+    token: &str,
+    max_age_expired_seconds: i64,
+) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::default();
+    validation.validate_exp = false;
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(get_secret().as_bytes()),
+        &validation,
+    )?;
+    let now = chrono::Utc::now().timestamp();
+    let exp = token_data.claims.exp as i64;
+    if exp < now - max_age_expired_seconds {
+        return Err(jsonwebtoken::errors::Error::from(
+            jsonwebtoken::errors::ErrorKind::ExpiredSignature,
+        ));
+    }
+    Ok(token_data.claims)
+}
+
 /// Base auth - any logged-in user (viewer+)
 pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
     let auth_header = request

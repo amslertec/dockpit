@@ -39,6 +39,10 @@ function createAuthStore() {
 			}
 			set({ token, username, role: parseRole(token), permissions: [] });
 		},
+		setToken(token: string) {
+			if (browser) localStorage.setItem('dp_token', token);
+			update(s => ({ ...s, token, role: parseRole(token) }));
+		},
 		logout() {
 			if (browser) {
 				localStorage.removeItem('dp_token');

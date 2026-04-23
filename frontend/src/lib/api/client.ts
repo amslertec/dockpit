@@ -20,7 +20,7 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<ApiResp
 					try {
 						const refreshData = JSON.parse(await refreshRes.text());
 						if (refreshData.success && refreshData.data?.token) {
-							auth.login(refreshData.data.token, refreshData.data.username);
+							auth.setToken(refreshData.data.token);
 							// Retry original request with new token
 							headers['Authorization'] = `Bearer ${refreshData.data.token}`;
 							const retry = await fetch(`/api${path}`, { ...opts, headers });
