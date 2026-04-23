@@ -1,5 +1,5 @@
 ## Stage 1: Build SvelteKit frontend
-FROM docker.io/library/node:20-slim AS frontend
+FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 ## Stage 2: Build Rust binary
-FROM docker.io/library/rust:slim-trixie AS builder
+FROM docker.io/library/rust:slim-trixie@sha256:c03ea1587a8e4474ae1a3f4a377cbb35ad53d2eb5c27f0bdf1ca8986025e322f AS builder
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY Cargo.toml ./
@@ -16,7 +16,7 @@ COPY --from=frontend /app/frontend/build ./frontend/build/
 RUN cargo build --release --bin dockpit-server
 
 ## Stage 3: Docker CLI + patched Compose (fixes CVEs in Go dependencies)
-FROM docker.io/library/golang:1.26-alpine AS compose-builder
+FROM docker.io/library/golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS compose-builder
 ARG COMPOSE_VERSION=v5.1.1
 RUN apk add --no-cache git curl \
     && git clone --depth 1 --branch ${COMPOSE_VERSION} https://github.com/docker/compose.git /src
@@ -32,14 +32,14 @@ RUN go get github.com/moby/buildkit@v0.28.1 \
     && go mod tidy
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/local/bin/docker-compose ./cmd
 
-FROM docker.io/library/alpine:3.21 AS docker-bins
+FROM docker.io/library/alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS docker-bins
 ARG DOCKER_VERSION=29.3.1
 RUN apk add --no-cache curl \
     && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 COPY --from=compose-builder /usr/local/bin/docker-compose /usr/local/bin/docker-compose
 
 ## Stage 4: Runtime
-FROM docker.io/library/debian:trixie-slim
+FROM docker.io/library/debian:trixie-slim@sha256:cedb1ef40439206b673ee8b33a46a03a0c9fa90bf3732f54704f99cb061d2c5a
 
 LABEL org.opencontainers.image.title="DockPit" \
       org.opencontainers.image.description="Modern Docker container management tool" \
