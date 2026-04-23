@@ -1,0 +1,61 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/amslertec/dockpit/vex/2026-04-23",
+  "author": "amslertec",
+  "timestamp": "2026-04-23T10:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2026-33634",
+        "name": "CVE-2026-33634"
+      },
+      "products": [
+        {"@id": "pkg:docker/amslertec/dockpit"},
+        {"@id": "pkg:docker/amslertec/dockpit-agent"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "CVE-2026-33634 affects trivy's credential-handling behavior when invoked from GitHub Actions pipelines. DockPit runs trivy exclusively as a local CLI inside its own server/agent container for on-demand image scanning; the CI-specific code path is never reached."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2025-15558",
+        "name": "CVE-2025-15558"
+      },
+      "products": [
+        {"@id": "pkg:docker/amslertec/dockpit"},
+        {"@id": "pkg:docker/amslertec/dockpit-agent"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "CVE-2025-15558 requires a malicious docker CLI plugin binary to be dropped into ~/.docker/cli-plugins or /usr/libexec/docker/cli-plugins. DockPit ships only the official docker-compose plugin; there is no mechanism for end users to install third-party plugins into the running container."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2026-34040",
+        "name": "CVE-2026-34040"
+      },
+      "products": [
+        {"@id": "pkg:docker/amslertec/dockpit"},
+        {"@id": "pkg:docker/amslertec/dockpit-agent"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "CVE-2026-34040 is an authorization bypass in the Moby engine daemon's authz handler. DockPit embeds github.com/docker/docker only via the docker-compose CLI for API type definitions; the Moby daemon binary and its authz handler are never compiled into our image or executed at runtime."
+    },
+    {
+      "vulnerability": {
+        "@id": "https://nvd.nist.gov/vuln/detail/CVE-2026-27135",
+        "name": "CVE-2026-27135"
+      },
+      "products": [
+        {"@id": "pkg:docker/amslertec/dockpit"},
+        {"@id": "pkg:docker/amslertec/dockpit-agent"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "libnghttp2-14 is installed transitively as part of debian:stable-slim but is not linked by any binary DockPit executes. The Rust server uses rustls for TLS and does not depend on libnghttp2; the Go binaries (docker-compose, docker CLI, trivy) are statically linked and bundle their own HTTP/2 implementation."
+    }
+  ]
+}
