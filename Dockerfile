@@ -38,27 +38,6 @@ RUN apk add --no-cache curl \
     && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" | tar xz --strip-components=1 -C /usr/local/bin docker/docker
 COPY --from=compose-builder /usr/local/bin/docker-compose /usr/local/bin/docker-compose
 
-## Stage: Build Trivy from source (v0.69.3 avoids CVE-2026-33634 which affects >=0.69.4)
-FROM docker.io/library/golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS trivy-builder
-ARG TRIVY_VERSION=v0.69.3
-RUN apk add --no-cache git
-RUN git clone --depth 1 --branch ${TRIVY_VERSION} https://github.com/aquasecurity/trivy.git /src
-WORKDIR /src
-ENV GOTOOLCHAIN=auto
-ENV GOEXPERIMENT=jsonv2
-RUN go get github.com/docker/cli@v29.4.1+incompatible \
-    && go get github.com/moby/buildkit@v0.28.1 \
-    && go get github.com/go-jose/go-jose/v4@v4.1.4 \
-    && go get github.com/hashicorp/go-getter@v1.8.6 \
-    && go get github.com/moby/spdystream@v0.5.1 \
-    && go get go.opentelemetry.io/otel/sdk@v1.43.0 \
-    && go get go.opentelemetry.io/otel@v1.43.0 \
-    && go get go.opentelemetry.io/otel/trace@v1.43.0 \
-    && go get go.opentelemetry.io/otel/metric@v1.43.0 \
-    && go get google.golang.org/grpc@v1.79.3 \
-    && go mod tidy
-RUN CGO_ENABLED=0 GOEXPERIMENT=jsonv2 go build -trimpath -ldflags="-s -w -X github.com/aquasecurity/trivy/pkg/version/app.ver=0.69.3" -o /usr/local/bin/trivy ./cmd/trivy
-
 ## Stage 4: Runtime
 FROM docker.io/library/debian:stable-slim@sha256:8f0c555de6a2f9c2bda1b170b67479d11f7f5e3b66bb4a7a1d8843361c9dd3ff
 
@@ -77,9 +56,12 @@ COPY --from=docker-bins /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-bins /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
 RUN mkdir -p /usr/libexec/docker/cli-plugins
 
-# Trivy (self-built from source, see trivy-builder stage) + pre-download DB
-COPY --from=trivy-builder /usr/local/bin/trivy /usr/local/bin/trivy
-RUN trivy filesystem --download-db-only --quiet /tmp && rm -rf /tmp/fanal
+# Install Trivy (release binary v0.69.3 — below CVE-2026-33634 affected range >=0.69.4)
+ARG TRIVY_VERSION=0.69.3
+RUN curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+    | tar xz -C /usr/local/bin trivy \
+    && trivy filesystem --download-db-only --quiet /tmp \
+    && rm -rf /tmp/fanal
 
 COPY --from=builder /app/target/release/dockpit-server /usr/local/bin/dockpit-server
 
