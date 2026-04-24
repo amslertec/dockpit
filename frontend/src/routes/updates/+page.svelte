@@ -13,6 +13,15 @@
 	import type { UpdateCheckResult } from '$lib/api/types';
 
 	interface CheckStatus { running: boolean; total_checked: number; total_outdated: number; last_check?: string; }
+	interface RecreateStep { text: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string; }
+	interface RecreateModal {
+		name: string;
+		image: string;
+		steps: RecreateStep[];
+		output: string;
+		done: boolean;
+		progress?: { current: number; total: number };
+	}
 
 	$effect(() => {
 		if (!$canSeePage('page.updates')) goto('/profile');
@@ -26,10 +35,13 @@
 	let perPage = $state(15);
 	let filter = $state<'all' | 'outdated' | 'current'>('all');
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
+	let recreateModal = $state<RecreateModal | null>(null);
+	let updatingIds = $state(new Set<number>());
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 
 	const filtered = $derived(results.filter(r => { if (filter === 'outdated') return r.outdated; if (filter === 'current') return !r.outdated; return true; }));
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
+	const outdatedRows = $derived(results.filter(r => r.outdated));
 
 	$effect(() => { if (tableEl && !loading && results.length > 0) initResizableColumns(tableEl); });
 
@@ -95,6 +107,126 @@
 		}};
 	}
 
+	function setStep(idx: number, step: RecreateStep['status'], detail?: string) {
+		if (!recreateModal) return;
+		recreateModal.steps[idx].status = step;
+		if (detail) recreateModal.steps[idx].detail = detail;
+		recreateModal = { ...recreateModal };
+	}
+
+	/** Recreate a single container from the report. Returns true on success. */
+	async function recreateOne(row: UpdateCheckResult): Promise<boolean> {
+		const r = await api.post<string>(`/env/${row.env_id}/containers/${encodeURIComponent(row.container_name)}/recreate`, {});
+		if (r.success) {
+			// Optimistically mark row as current (remove from outdated list)
+			results = results.map(x => x.id === row.id ? { ...x, outdated: false } : x);
+			status = { ...status, total_outdated: Math.max(0, status.total_outdated - 1) };
+			return true;
+		}
+		if (!recreateModal) return false;
+		recreateModal.output = (recreateModal.output ? recreateModal.output + '\n\n' : '') + `${row.container_name}: ${r.error || $t('common.error')}`;
+		recreateModal = { ...recreateModal };
+		return false;
+	}
+
+	function confirmUpdate(row: UpdateCheckResult) {
+		confirmDlg = {
+			message: $t('updates.confirmUpdate', { name: row.container_name }),
+			action: async () => {
+				confirmDlg = null;
+				await doSingleUpdate(row);
+			}
+		};
+	}
+
+	async function doSingleUpdate(row: UpdateCheckResult) {
+		if (updatingIds.has(row.id)) return;
+		updatingIds = new Set([...updatingIds, row.id]);
+
+		recreateModal = {
+			name: row.container_name,
+			image: row.image,
+			output: '',
+			done: false,
+			steps: [
+				{ text: $t('containers.pullImage'), status: 'running' },
+				{ text: $t('containers.stopRemove'), status: 'pending' },
+				{ text: $t('containers.createStart'), status: 'pending' },
+			]
+		};
+
+		// Simulated step progression while waiting for the API
+		const t1 = setTimeout(() => { if (recreateModal && !recreateModal.done) { setStep(0, 'done'); setStep(1, 'running'); } }, 3000);
+		const t2 = setTimeout(() => { if (recreateModal && !recreateModal.done) { setStep(1, 'done'); setStep(2, 'running'); } }, 6000);
+
+		const ok = await recreateOne(row);
+		clearTimeout(t1); clearTimeout(t2);
+		if (!recreateModal) {
+			updatingIds = new Set([...updatingIds].filter(i => i !== row.id));
+			return;
+		}
+		if (ok) {
+			recreateModal.steps.forEach(s => { s.status = 'done'; });
+			recreateModal.output = $t('updates.updateSuccess', { name: row.container_name });
+		} else {
+			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');
+			if (failIdx >= 0) recreateModal.steps[failIdx].status = 'error';
+		}
+		recreateModal.done = true;
+		recreateModal = { ...recreateModal };
+		updatingIds = new Set([...updatingIds].filter(i => i !== row.id));
+	}
+
+	function confirmUpdateAll() {
+		const n = outdatedRows.length;
+		if (n === 0) return;
+		confirmDlg = {
+			message: $t('updates.confirmUpdateAll', { count: n }),
+			action: async () => {
+				confirmDlg = null;
+				await doUpdateAll();
+			}
+		};
+	}
+
+	async function doUpdateAll() {
+		const rows = [...outdatedRows];
+		if (rows.length === 0) return;
+
+		recreateModal = {
+			name: $t('updates.updateAllTitle', { count: rows.length }),
+			image: '',
+			output: '',
+			done: false,
+			progress: { current: 0, total: rows.length },
+			steps: rows.map(r => ({ text: `${r.container_name} — ${r.image}`, status: 'pending' as const }))
+		};
+
+		let ok = 0, fail = 0;
+		for (let i = 0; i < rows.length; i++) {
+			if (!recreateModal) break;
+			updatingIds = new Set([...updatingIds, rows[i].id]);
+			recreateModal.steps[i].status = 'running';
+			recreateModal.progress = { current: i + 1, total: rows.length };
+			recreateModal = { ...recreateModal };
+
+			const success = await recreateOne(rows[i]);
+			if (!recreateModal) { updatingIds = new Set([...updatingIds].filter(x => x !== rows[i].id)); break; }
+			recreateModal.steps[i].status = success ? 'done' : 'error';
+			updatingIds = new Set([...updatingIds].filter(x => x !== rows[i].id));
+			if (success) ok++; else fail++;
+			recreateModal = { ...recreateModal };
+		}
+
+		if (recreateModal) {
+			recreateModal.done = true;
+			recreateModal.output = (recreateModal.output ? recreateModal.output + '\n\n' : '')
+				+ $t('updates.updateAllDone', { ok, fail });
+			recreateModal = { ...recreateModal };
+		}
+		updatingIds = new Set();
+	}
+
 	function handlePageChange(p: number, pp: number) { page = p; perPage = pp; }
 </script>
 
@@ -151,6 +283,12 @@
 		</div>
 		<div class="flex items-center gap-2">
 			{#if $canDoAction('action.container_recreate')}
+			{#if outdatedRows.length > 0 && !status.running && !recreateModal}
+				<Button variant="success" size="sm" onclick={confirmUpdateAll} title={$t('updates.updateAllTitle', { count: outdatedRows.length })}>
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10"/></svg>
+					<span class="ml-1">{$t('updates.updateAll', { count: outdatedRows.length })}</span>
+				</Button>
+			{/if}
 			<Button variant="primary" size="sm" onclick={runCheck} disabled={status.running} loading={status.running} title={status.running ? $t('updates.checkRunning') : $t('updates.checkNow')}>
 				{#if !status.running}<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>{/if}
 			</Button>
@@ -182,6 +320,9 @@
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">Image</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('updates.server')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold hidden md:table-cell">{$t('updates.totalChecked')}</th>
+					{#if $canDoAction('action.container_recreate')}
+					<th class="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold w-24">{$t('common.actions')}</th>
+					{/if}
 				</tr></thead>
 				<tbody>
 					{#each paged as r}
@@ -203,6 +344,24 @@
 							<td class="px-4 py-3 text-xs text-secondary max-w-[200px] truncate">{r.image}</td>
 							<td class="px-4 py-3 text-xs text-secondary">{r.server_name}</td>
 							<td class="px-4 py-3 text-xs text-muted hidden md:table-cell">{formatDateTime(r.checked_at)}</td>
+							{#if $canDoAction('action.container_recreate')}
+							<td class="px-4 py-3 text-right">
+								{#if r.outdated}
+									<button
+										onclick={() => confirmUpdate(r)}
+										disabled={updatingIds.has(r.id) || !!recreateModal}
+										title={$t('updates.updateNow')}
+										class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition">
+										{#if updatingIds.has(r.id)}
+											<div class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+										{:else}
+											<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+										{/if}
+										<span>{$t('updates.update')}</span>
+									</button>
+								{/if}
+							</td>
+							{/if}
 						</tr>
 					{/each}
 				</tbody>
@@ -214,4 +373,89 @@
 
 {#if confirmDlg}
 	<ConfirmDialog message={confirmDlg.message} onconfirm={confirmDlg.action} oncancel={() => confirmDlg = null} />
+{/if}
+
+{#if recreateModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+		onclick={(e) => { if (e.target === e.currentTarget && recreateModal?.done) recreateModal = null; }}>
+		<div class="bg-card border border-theme rounded-xl w-full max-w-xl shadow-2xl flex flex-col max-h-[85vh]">
+			<!-- Header -->
+			<div class="flex items-center justify-between px-6 py-4 border-b border-theme shrink-0">
+				<div class="min-w-0">
+					<h3 class="text-base font-semibold text-primary">{$t('containers.recreateTitle')}</h3>
+					<p class="text-xs text-secondary mt-0.5 truncate">
+						{recreateModal.name}{#if recreateModal.image} · {recreateModal.image}{/if}
+					</p>
+					{#if recreateModal.progress}
+						<p class="text-[11px] text-muted mt-0.5">
+							{recreateModal.progress.current} / {recreateModal.progress.total}
+						</p>
+					{/if}
+				</div>
+				{#if recreateModal.done}
+					<button class="w-8 h-8 flex items-center justify-center rounded-md border border-theme text-secondary hover:text-primary hover:border-light transition"
+						onclick={() => recreateModal = null}>
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					</button>
+				{/if}
+			</div>
+
+			<!-- Steps -->
+			<div class="px-6 py-5 space-y-4 overflow-y-auto">
+				{#each recreateModal.steps as step, i}
+					<div class="flex items-start gap-3">
+						<div class="w-6 h-6 shrink-0 flex items-center justify-center mt-0.5">
+							{#if step.status === 'running'}
+								<div class="w-5 h-5 border-2 border-[var(--accent)]/30 border-t-[var(--accent)] rounded-full animate-spin"></div>
+							{:else if step.status === 'done'}
+								<div class="w-5 h-5 rounded-full bg-[var(--green)] flex items-center justify-center">
+									<svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+								</div>
+							{:else if step.status === 'error'}
+								<div class="w-5 h-5 rounded-full bg-[var(--red)] flex items-center justify-center">
+									<svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								</div>
+							{:else}
+								<div class="w-5 h-5 rounded-full border-2 border-theme"></div>
+							{/if}
+						</div>
+						<div class="flex-1 min-w-0">
+							<p class="text-sm {step.status === 'running' ? 'text-primary font-medium' : step.status === 'done' ? 'text-secondary' : step.status === 'error' ? 'text-red' : 'text-muted'}">
+								{step.text}
+							</p>
+							{#if step.detail}
+								<p class="text-[11px] text-muted mt-1 font-mono break-all">{step.detail}</p>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+
+			<!-- Output -->
+			{#if recreateModal.output && recreateModal.done}
+				<div class="border-t border-theme">
+					<details class="group" open={recreateModal.output.includes('updates.')}>
+						<summary class="px-6 py-3 text-xs text-secondary cursor-pointer hover:text-primary transition flex items-center gap-2">
+							<svg class="w-3 h-3 transition group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+							{$t('containers.fullOutput')}
+						</summary>
+						<div class="px-6 pb-4">
+							<div class="bg-0 border border-theme rounded-lg p-4 font-mono text-[11px] leading-[1.8] text-secondary max-h-[200px] overflow-y-auto whitespace-pre-wrap break-words">
+								{recreateModal.output}
+							</div>
+						</div>
+					</details>
+				</div>
+			{/if}
+
+			<!-- Footer -->
+			{#if recreateModal.done}
+				<div class="px-6 py-4 border-t border-theme flex justify-end shrink-0">
+					<Button variant="primary" onclick={() => recreateModal = null}>{$t('common.close')}</Button>
+				</div>
+			{/if}
+		</div>
+	</div>
 {/if}

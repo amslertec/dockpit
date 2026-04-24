@@ -547,6 +547,13 @@ export const en: Record<string, string> = {
 	'updates.noResults': 'No results yet',
 	'updates.noResultsDesc': 'Click "Check now" to scan all containers',
 	'updates.update': 'Update',
+	'updates.updateNow': 'Update now',
+	'updates.confirmUpdate': 'Recreate container "{name}" with the latest image?',
+	'updates.confirmUpdateAll': 'Recreate {count} outdated containers with their latest images?',
+	'updates.updateAll': 'Update all ({count})',
+	'updates.updateAllTitle': 'Update {count} containers',
+	'updates.updateAllDone': 'Done: {ok} succeeded, {fail} failed',
+	'updates.updateSuccess': 'Successfully updated "{name}"',
 	'updates.server': 'Server',
 
 	// === Terminal ===
