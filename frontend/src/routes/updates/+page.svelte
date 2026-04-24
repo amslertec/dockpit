@@ -8,6 +8,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/ui/Pagination.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import CustomCheckbox from '$lib/components/ui/CustomCheckbox.svelte';
 	import { formatDateTime } from '$lib/utils/format';
 	import { initResizableColumns } from '$lib/utils/resizable-columns';
 	import type { UpdateCheckResult } from '$lib/api/types';
@@ -37,11 +38,34 @@
 	let confirmDlg = $state<{ message: string; action: () => void } | null>(null);
 	let recreateModal = $state<RecreateModal | null>(null);
 	let updatingIds = $state(new Set<number>());
+	let selectedIds = $state(new Set<number>());
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 
 	const filtered = $derived(results.filter(r => { if (filter === 'outdated') return r.outdated; if (filter === 'current') return !r.outdated; return true; }));
 	const paged = $derived(perPage === 0 ? filtered : filtered.slice((page - 1) * perPage, page * perPage));
 	const outdatedRows = $derived(results.filter(r => r.outdated));
+
+	// Group selected rows by server for per-server bulk actions
+	interface ServerSelection { envId: string; serverName: string; rows: UpdateCheckResult[]; }
+	const selectedByServer = $derived.by<ServerSelection[]>(() => {
+		const map = new Map<string, ServerSelection>();
+		for (const r of outdatedRows) {
+			if (!selectedIds.has(r.id)) continue;
+			if (!map.has(r.env_id)) map.set(r.env_id, { envId: r.env_id, serverName: r.server_name, rows: [] });
+			map.get(r.env_id)!.rows.push(r);
+		}
+		return Array.from(map.values()).sort((a, b) => a.serverName.localeCompare(b.serverName));
+	});
+
+	// Are all visible outdated rows selected?
+	const allVisibleSelected = $derived.by(() => {
+		const visibleOutdated = paged.filter(r => r.outdated);
+		return visibleOutdated.length > 0 && visibleOutdated.every(r => selectedIds.has(r.id));
+	});
+	const someVisibleSelected = $derived.by(() => {
+		const visibleOutdated = paged.filter(r => r.outdated);
+		return visibleOutdated.some(r => selectedIds.has(r.id)) && !allVisibleSelected;
+	});
 
 	$effect(() => { if (tableEl && !loading && results.length > 0) initResizableColumns(tableEl); });
 
@@ -102,8 +126,12 @@
 		confirmDlg = { message: $t('updates.confirmClear'), action: async () => {
 			confirmDlg = null;
 			const r = await api.del<string>('/updates/report');
-			if (r.success) { toasts.success($t('images.deleted')); results = []; status = { ...status, total_checked: 0, total_outdated: 0 }; }
-			else toasts.error(r.error || $t('common.error'));
+			if (r.success) {
+				toasts.success($t('images.deleted'));
+				results = [];
+				selectedIds = new Set();
+				status = { ...status, total_checked: 0, total_outdated: 0 };
+			} else toasts.error(r.error || $t('common.error'));
 		}};
 	}
 
@@ -114,20 +142,45 @@
 		recreateModal = { ...recreateModal };
 	}
 
-	/** Recreate a single container from the report. Returns true on success. */
+	/** Recreate a single container. Returns true on success. */
 	async function recreateOne(row: UpdateCheckResult): Promise<boolean> {
 		const r = await api.post<string>(`/env/${row.env_id}/containers/${encodeURIComponent(row.container_name)}/recreate`, {});
 		if (r.success) {
-			// Optimistically mark row as current (remove from outdated list)
 			results = results.map(x => x.id === row.id ? { ...x, outdated: false } : x);
 			status = { ...status, total_outdated: Math.max(0, status.total_outdated - 1) };
 			return true;
 		}
-		if (!recreateModal) return false;
-		recreateModal.output = (recreateModal.output ? recreateModal.output + '\n\n' : '') + `${row.container_name}: ${r.error || $t('common.error')}`;
-		recreateModal = { ...recreateModal };
+		if (recreateModal) {
+			recreateModal.output = (recreateModal.output ? recreateModal.output + '\n\n' : '') + `${row.container_name}: ${r.error || $t('common.error')}`;
+			recreateModal = { ...recreateModal };
+		}
 		return false;
 	}
+
+	// --- Selection helpers ---
+
+	function toggleRow(id: number) {
+		const s = new Set(selectedIds);
+		if (s.has(id)) s.delete(id); else s.add(id);
+		selectedIds = s;
+	}
+
+	function toggleAllVisible() {
+		const visibleOutdated = paged.filter(r => r.outdated);
+		const s = new Set(selectedIds);
+		if (allVisibleSelected) {
+			visibleOutdated.forEach(r => s.delete(r.id));
+		} else {
+			visibleOutdated.forEach(r => s.add(r.id));
+		}
+		selectedIds = s;
+	}
+
+	function clearSelection() {
+		selectedIds = new Set();
+	}
+
+	// --- Single container update ---
 
 	function confirmUpdate(row: UpdateCheckResult) {
 		confirmDlg = {
@@ -155,7 +208,6 @@
 			]
 		};
 
-		// Simulated step progression while waiting for the API
 		const t1 = setTimeout(() => { if (recreateModal && !recreateModal.done) { setStep(0, 'done'); setStep(1, 'running'); } }, 3000);
 		const t2 = setTimeout(() => { if (recreateModal && !recreateModal.done) { setStep(1, 'done'); setStep(2, 'running'); } }, 6000);
 
@@ -168,6 +220,10 @@
 		if (ok) {
 			recreateModal.steps.forEach(s => { s.status = 'done'; });
 			recreateModal.output = $t('updates.updateSuccess', { name: row.container_name });
+			// Row just updated → also clear from selection
+			const s = new Set(selectedIds);
+			s.delete(row.id);
+			selectedIds = s;
 		} else {
 			const failIdx = recreateModal.steps.findIndex(s => s.status === 'running');
 			if (failIdx >= 0) recreateModal.steps[failIdx].status = 'error';
@@ -177,6 +233,8 @@
 		updatingIds = new Set([...updatingIds].filter(i => i !== row.id));
 	}
 
+	// --- Bulk: update everything outdated (all servers) ---
+
 	function confirmUpdateAll() {
 		const n = outdatedRows.length;
 		if (n === 0) return;
@@ -184,22 +242,35 @@
 			message: $t('updates.confirmUpdateAll', { count: n }),
 			action: async () => {
 				confirmDlg = null;
-				await doUpdateAll();
+				await doUpdateMultiple(outdatedRows, $t('updates.updateAllTitle', { count: n }));
 			}
 		};
 	}
 
-	async function doUpdateAll() {
-		const rows = [...outdatedRows];
+	// --- Bulk: update selected on a single server ---
+
+	function confirmUpdateSelectedOnServer(group: ServerSelection) {
+		if (group.rows.length === 0) return;
+		confirmDlg = {
+			message: $t('updates.confirmUpdateSelectedOnServer', { count: group.rows.length, server: group.serverName }),
+			action: async () => {
+				confirmDlg = null;
+				await doUpdateMultiple(group.rows, $t('updates.updateOnServerTitle', { count: group.rows.length, server: group.serverName }));
+			}
+		};
+	}
+
+	/** Shared bulk executor — sequential within the list. */
+	async function doUpdateMultiple(rows: UpdateCheckResult[], title: string) {
 		if (rows.length === 0) return;
 
 		recreateModal = {
-			name: $t('updates.updateAllTitle', { count: rows.length }),
+			name: title,
 			image: '',
 			output: '',
 			done: false,
 			progress: { current: 0, total: rows.length },
-			steps: rows.map(r => ({ text: `${r.container_name} — ${r.image}`, status: 'pending' as const }))
+			steps: rows.map(r => ({ text: `${r.container_name} — ${r.image}  [${r.server_name}]`, status: 'pending' as const }))
 		};
 
 		let ok = 0, fail = 0;
@@ -211,10 +282,21 @@
 			recreateModal = { ...recreateModal };
 
 			const success = await recreateOne(rows[i]);
-			if (!recreateModal) { updatingIds = new Set([...updatingIds].filter(x => x !== rows[i].id)); break; }
+			if (!recreateModal) {
+				updatingIds = new Set([...updatingIds].filter(x => x !== rows[i].id));
+				break;
+			}
 			recreateModal.steps[i].status = success ? 'done' : 'error';
 			updatingIds = new Set([...updatingIds].filter(x => x !== rows[i].id));
-			if (success) ok++; else fail++;
+			if (success) {
+				// Clear successfully-updated rows from selection
+				const s = new Set(selectedIds);
+				s.delete(rows[i].id);
+				selectedIds = s;
+				ok++;
+			} else {
+				fail++;
+			}
 			recreateModal = { ...recreateModal };
 		}
 
@@ -267,6 +349,29 @@
 	</div>
 {/if}
 
+<!-- Selection action bar — appears when rows are selected -->
+{#if selectedIds.size > 0 && $canDoAction('action.container_recreate') && !recreateModal}
+	<div class="bg-accent-light border border-[var(--accent)] rounded-lg p-3 mb-4 flex items-center gap-3 flex-wrap">
+		<div class="text-sm text-primary font-medium shrink-0">
+			{$t('updates.selectedCount', { count: selectedIds.size, servers: selectedByServer.length })}
+		</div>
+		<div class="flex items-center gap-2 flex-wrap flex-1">
+			{#each selectedByServer as group}
+				<button
+					onclick={() => confirmUpdateSelectedOnServer(group)}
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium bg-accent text-white hover:opacity-90 transition">
+					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+					{$t('updates.updateOnServer', { count: group.rows.length, server: group.serverName })}
+				</button>
+			{/each}
+		</div>
+		<button onclick={clearSelection}
+			class="text-[11px] text-secondary hover:text-primary transition shrink-0 px-2 py-1 rounded-md hover:bg-hover">
+			{$t('updates.clearSelection')}
+		</button>
+	</div>
+{/if}
+
 <div class="bg-card border border-theme rounded-lg overflow-hidden">
 	<div class="px-4 py-3 border-b border-theme flex items-center justify-between flex-wrap gap-3">
 		<div class="flex items-center gap-2">
@@ -283,7 +388,7 @@
 		</div>
 		<div class="flex items-center gap-2">
 			{#if $canDoAction('action.container_recreate')}
-			{#if outdatedRows.length > 0 && !status.running && !recreateModal}
+			{#if outdatedRows.length > 0 && !status.running && !recreateModal && selectedIds.size === 0}
 				<Button variant="success" size="sm" onclick={confirmUpdateAll} title={$t('updates.updateAllTitle', { count: outdatedRows.length })}>
 					<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 5.64 5.64L23 10"/></svg>
 					<span class="ml-1">{$t('updates.updateAll', { count: outdatedRows.length })}</span>
@@ -315,6 +420,15 @@
 		<div class="overflow-x-auto">
 			<table bind:this={tableEl} class="w-full">
 				<thead><tr class="border-b border-theme">
+					{#if $canDoAction('action.container_recreate')}
+					<th class="pl-4 pr-1 py-2.5 w-10">
+						{#if paged.some(r => r.outdated)}
+							<CustomCheckbox
+								checked={allVisibleSelected || someVisibleSelected}
+								onchange={toggleAllVisible} />
+						{/if}
+					</th>
+					{/if}
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('common.status')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">{$t('containers.title')}</th>
 					<th class="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted font-semibold">Image</th>
@@ -326,7 +440,14 @@
 				</tr></thead>
 				<tbody>
 					{#each paged as r}
-						<tr class="border-b border-theme last:border-0 hover:bg-hover transition">
+						<tr class="border-b border-theme last:border-0 hover:bg-hover transition {selectedIds.has(r.id) ? 'bg-accent-light/30' : ''}">
+							{#if $canDoAction('action.container_recreate')}
+							<td class="pl-4 pr-1 py-3 w-10">
+								{#if r.outdated}
+									<CustomCheckbox checked={selectedIds.has(r.id)} onchange={() => toggleRow(r.id)} />
+								{/if}
+							</td>
+							{/if}
 							<td class="px-4 py-3">
 								{#if r.outdated}
 									<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-light text-red">
@@ -436,7 +557,7 @@
 			<!-- Output -->
 			{#if recreateModal.output && recreateModal.done}
 				<div class="border-t border-theme">
-					<details class="group" open={recreateModal.output.includes('updates.')}>
+					<details class="group">
 						<summary class="px-6 py-3 text-xs text-secondary cursor-pointer hover:text-primary transition flex items-center gap-2">
 							<svg class="w-3 h-3 transition group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 							{$t('containers.fullOutput')}

@@ -538,6 +538,11 @@ export const de: Record<string, string> = {
 	'updates.updateAllTitle': '{count} Container updaten',
 	'updates.updateAllDone': 'Abgeschlossen: {ok} erfolgreich, {fail} fehlgeschlagen',
 	'updates.updateSuccess': 'Update von "{name}" erfolgreich',
+	'updates.selectedCount': '{count} ausgewählt auf {servers} Server',
+	'updates.clearSelection': 'Auswahl löschen',
+	'updates.updateOnServer': '{count} auf {server} updaten',
+	'updates.updateOnServerTitle': '{count} Container auf {server}',
+	'updates.confirmUpdateSelectedOnServer': '{count} ausgewählte Container auf "{server}" aktualisieren?',
 	'updates.server': 'Server',
 
 	// === Terminal ===
